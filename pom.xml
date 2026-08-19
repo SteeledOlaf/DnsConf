@@ -1,5 +1,10 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="
+            http://maven.apache.org/POM/4.0.0
+            https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.novibe</groupId>
@@ -11,46 +16,63 @@
 
     <properties>
         <java.version>26</java.version>
+
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
         <spring-context.version>7.0.2</spring-context.version>
         <lombok.version>1.18.42</lombok.version>
         <gson.version>2.10.1</gson.version>
         <dnsjava.version>3.6.5</dnsjava.version>
+
+        <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
         <maven-shade-plugin.version>3.6.0</maven-shade-plugin.version>
     </properties>
 
     <dependencies>
+
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-context</artifactId>
             <version>${spring-context.version}</version>
         </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <version>${lombok.version}</version>
             <scope>provided</scope>
         </dependency>
+
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
             <version>${gson.version}</version>
         </dependency>
+
         <dependency>
             <groupId>dnsjava</groupId>
             <artifactId>dnsjava</artifactId>
             <version>${dnsjava.version}</version>
         </dependency>
+
     </dependencies>
+
     <build>
         <plugins>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+                <version>${maven-compiler-plugin.version}</version>
+
                 <configuration>
                     <source>${java.version}</source>
                     <target>${java.version}</target>
-                    <compilerArgs>--enable-preview</compilerArgs>
+
+                    <compilerArgs>
+                        <arg>--enable-preview</arg>
+                    </compilerArgs>
+
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>
@@ -60,30 +82,43 @@
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
                 <version>${maven-shade-plugin.version}</version>
+
                 <executions>
                     <execution>
                         <phase>package</phase>
+
                         <goals>
                             <goal>shade</goal>
                         </goals>
+
                         <configuration>
                             <transformers>
+
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.novibe.App</mainClass>
+                                    <mainClass>
+                                        com.novibe.App
+                                    </mainClass>
+
                                     <manifestEntries>
                                         <Multi-Release>true</Multi-Release>
                                     </manifestEntries>
                                 </transformer>
+
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+
                             </transformers>
                         </configuration>
                     </execution>
                 </executions>
+
             </plugin>
+
         </plugins>
     </build>
+
 </project>
