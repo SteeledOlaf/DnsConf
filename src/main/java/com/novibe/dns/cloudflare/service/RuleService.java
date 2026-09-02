@@ -21,6 +21,7 @@ public class RuleService {
 
     private static final String RULES_LIST_NAME_PREFIX = "Rules set by script";
     private static final int MAX_INLINE_TRAFFIC_LENGTH = 120_000;
+    private static final int MAX_INLINE_VALUES = 100;
 
     private final CloudflareRuleClient cloudflareRuleClient;
     private final OwnershipMarker ownershipMarker;
@@ -43,11 +44,20 @@ public class RuleService {
                                                  RulePrecedenceCounter precedence) {
         List<String> expressions = makeInlineTrafficExpressions(domains);
         List<CreatedRule> result = new ArrayList<>();
-        for (int index = 0; index < expressions.size(); index++) {
-            String suffix = expressions.size() == 1 ? "" : " part " + (index + 1) + "/" + expressions.size();
-            result.add(createOverrideRule(expressions.get(index), overrideIp, precedence.next(), suffix));
+        try {
+            for (int index = 0; index < expressions.size(); index++) {
+                String suffix = expressions.size() == 1 ? "" : " part " + (index + 1) + "/" + expressions.size();
+                result.add(createOverrideRule(expressions.get(index), overrideIp, precedence.next(), suffix));
+            }
+            return List.copyOf(result);
+        } catch (RuntimeException creationFailure) {
+            try {
+                removeCreatedRules(result);
+            } catch (RuntimeException rollbackFailure) {
+                creationFailure.addSuppressed(rollbackFailure);
+            }
+            throw creationFailure;
         }
-        return List.copyOf(result);
     }
 
     private CreatedRule createOverrideRule(String traffic, String overrideIp, int precedence, String nameSuffix) {
@@ -159,15 +169,19 @@ public class RuleService {
 
         List<String> expressions = new ArrayList<>();
         StringBuilder current = new StringBuilder();
+        int currentValues = 0;
         for (String domain : domains) {
             String clause = "any(dns.domains[*] == \"" + escapeExpressionString(domain) + "\")";
             int separatorLength = current.isEmpty() ? 0 : 4;
-            if (!current.isEmpty() && current.length() + separatorLength + clause.length() > MAX_INLINE_TRAFFIC_LENGTH) {
+            if (!current.isEmpty() && (currentValues >= MAX_INLINE_VALUES
+                    || current.length() + separatorLength + clause.length() > MAX_INLINE_TRAFFIC_LENGTH)) {
                 expressions.add(current.toString());
                 current.setLength(0);
+                currentValues = 0;
             }
             if (!current.isEmpty()) current.append(" or ");
             current.append(clause);
+            currentValues++;
         }
         expressions.add(current.toString());
         return List.copyOf(expressions);
