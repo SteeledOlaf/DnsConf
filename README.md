@@ -246,8 +246,24 @@ Previously generated data is removed **ONLY** when both `BLOCK` and `REDIRECT` s
 2) Go _Settings_ => _Environments_
 3) Create _New environment_ with name `DNS`
 4) Provide `AUTH_SECRET` and `CLIENT_ID` to **Environment secrets**
-5) Provide `DNS`,`REDIRECT`, `BLOCK`, `EXCLUDE_REDIRECT`, `DONOR_DNS` and optional `ALLOW_CLEAR` to
+5) Provide `DNS`,`REDIRECT`, `BLOCK`, `EXCLUDE_REDIRECT`, `DONOR_DNS`, and optional `ALLOW_CLEAR`, `DRY_RUN`, and
+   `DNSCONF_OWNER_ID` to
    **Environment variables**. Keep `ALLOW_CLEAR` unset or `false` during normal operation.
+
+- The scheduled workflow runs every six hours. A manual run can use `apply_dns` to apply changes or `dry_run` to
+  fetch and validate inputs and print the reconciliation plan without changing a provider.
+
+### Reliability and security
+
+- Cloudflare uses generation replacement: new lists and disabled rules are created before the previous generation is
+  removed. Failed creation is rolled back. Keep enough list/rule quota for two generations to coexist briefly.
+- `DNSCONF_OWNER_ID` is a stable ownership namespace. It defaults to `default`; avoid changing it after first use.
+- List sources and DoH donors must be public HTTPS endpoints. Loopback, private, link-local, and multicast targets are
+  rejected.
+- Use a dedicated Cloudflare API token scoped to the required account and the minimum Zero Trust/Gateway edit
+  permissions.
+- Authentication and provider API errors produce a failing process exit code, so a green workflow means all requested
+  operations were acknowledged.
 
 + The action is executed every 6 hours at minute 17 (`17 */6 * * *`, UTC). To set another interval, change cron in
   `.github/workflows/github_action.yml`.

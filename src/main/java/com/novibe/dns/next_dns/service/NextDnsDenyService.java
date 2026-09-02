@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -25,8 +26,9 @@ public class NextDnsDenyService {
                 .filter(DenyDto::isActive)
                 .map(DenyDto::getId)
                 .collect(Collectors.toSet());
-        newDenyList.removeIf(existingDomainsSet::contains);
-        return newDenyList;
+        List<String> result = new ArrayList<>(newDenyList);
+        result.removeIf(existingDomainsSet::contains);
+        return result;
     }
 
     public void saveDenyList(List<String> newDenylist) {

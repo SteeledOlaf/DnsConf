@@ -1,13 +1,17 @@
 package com.novibe.common.data_sources;
 
 import com.novibe.common.base_structures.HostsLine;
+import com.novibe.common.security.NetworkTargetPolicy;
 import com.novibe.common.util.DataParser;
 import com.novibe.common.util.Log;
 import lombok.Setter;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.io.BufferedReader;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -17,15 +21,17 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 @Setter(onMethod_ = @Autowired)
 public abstract class ListLoader<T> {
 
-    private static final int MAX_LIST_BYTES = 50 * 1024 * 1024;
-
+    private static final long MAX_LIST_BYTES = 50L * 1024 * 1024;
     private HttpClient client;
 
     protected abstract T toObject(HostsLine hostsLine);
@@ -34,20 +40,16 @@ public abstract class ListLoader<T> {
 
     protected abstract Predicate<HostsLine> filterRelatedLines();
 
-    @SuppressWarnings("preview")
     public List<T> fetchWebsites(List<String> urls) {
-        try (var scope = StructuredTaskScope.open()) {
-            List<StructuredTaskScope.Subtask<String>> requests = new ArrayList<>();
-            urls.stream()
-                    .map(url -> scope.fork(() -> fetchList(url)))
-                    .forEach(requests::add);
-            scope.join();
-
-            return requests.stream()
-                    .map(StructuredTaskScope.Subtask::get)
-                    .flatMap(DataParser::splitByEol)
+        if (urls.isEmpty()) return new ArrayList<>();
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            List<Future<List<String>>> requests = urls.stream()
+                    .map(url -> executor.submit(() -> fetchList(url)))
+                    .toList();
+            List<String> lines = new ArrayList<>();
+            for (Future<List<String>> request : requests) lines.addAll(request.get());
+            return lines.stream()
                     .map(String::strip)
-                    .parallel()
                     .filter(line -> !line.isBlank())
                     .filter(line -> !DataParser.isComment(line))
                     .map(String::toLowerCase)
@@ -57,41 +59,60 @@ public abstract class ListLoader<T> {
                     .distinct()
                     .map(this::toObject)
                     .collect(Collectors.toCollection(ArrayList::new));
-        } catch (InterruptedException e) {
+        } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException(e);
+            throw new IllegalStateException("List loading was interrupted", exception);
+        } catch (ExecutionException exception) {
+            throw new IllegalStateException("Failed to load a configured list source", exception.getCause());
         }
     }
 
-    private String fetchList(String url) throws IOException, InterruptedException {
+    private List<String> fetchList(String url) throws IOException, InterruptedException {
         URI uri = URI.create(url);
-        if (!"https".equalsIgnoreCase(uri.getScheme())) {
-            throw new IOException("Only HTTPS list sources are allowed: " + uri.getHost());
-        }
-
+        NetworkTargetPolicy.requirePublicHttps(uri);
         Log.io("Loading %s list from host: %s".formatted(listType(), uri.getHost()));
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .timeout(Duration.ofSeconds(60))
                 .GET()
                 .build();
         HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
-
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             response.body().close();
             throw new IOException("List source returned HTTP %s: %s".formatted(response.statusCode(), uri.getHost()));
         }
-        if (!"https".equalsIgnoreCase(response.uri().getScheme())) {
-            response.body().close();
-            throw new IOException("List source redirected outside HTTPS: " + uri.getHost());
-        }
-
-        try (InputStream body = response.body()) {
-            byte[] bytes = body.readNBytes(MAX_LIST_BYTES + 1);
-            if (bytes.length > MAX_LIST_BYTES) {
-                throw new IOException("List source exceeds 50 MiB limit: " + uri.getHost());
-            }
-            return new String(bytes, StandardCharsets.UTF_8);
+        NetworkTargetPolicy.requirePublicHttps(response.uri());
+        try (InputStream body = new LimitedInputStream(response.body(), MAX_LIST_BYTES);
+             BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8))) {
+            return reader.lines().toList();
         }
     }
 
+    private static final class LimitedInputStream extends FilterInputStream {
+        private final long limit;
+        private long bytesRead;
+
+        private LimitedInputStream(InputStream input, long limit) {
+            super(input);
+            this.limit = limit;
+        }
+
+        @Override
+        public int read() throws IOException {
+            int value = super.read();
+            if (value >= 0) addBytes(1);
+            return value;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            int count = super.read(buffer, offset, length);
+            if (count > 0) addBytes(count);
+            return count;
+        }
+
+        private void addBytes(int count) throws IOException {
+            bytesRead += count;
+            if (bytesRead > limit) throw new IOException("List source exceeds 50 MiB limit");
+        }
+    }
 }

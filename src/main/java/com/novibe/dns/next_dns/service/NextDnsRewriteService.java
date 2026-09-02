@@ -11,11 +11,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-import static java.util.Objects.nonNull;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -24,44 +24,53 @@ public class NextDnsRewriteService {
     private final NextDnsRewriteClient nextDnsRewriteClient;
     private final ExcludeRedirectCheckService excludeRedirectCheckService;
 
-    public Map<String, CreateRewriteDto> buildNewRewrites(List<BypassRoute> overrides) {
-        Map<String, CreateRewriteDto> rewriteDtos = new HashMap<>();
-        overrides.forEach(route -> rewriteDtos.putIfAbsent(route.website(), new CreateRewriteDto(route.website(), route.ip())));
-        return rewriteDtos;
+    public void reconcile(List<BypassRoute> overrides) {
+        Map<String, CreateRewriteDto> desired = buildDesired(overrides);
+        List<RewriteDto> existing = getExistingRewrites();
+        Map<String, RewriteDto> existingByDomain = existing.stream()
+                .collect(Collectors.toMap(RewriteDto::name, Function.identity(), (first, ignored) -> first));
+
+        List<String> excludedIds = existing.stream()
+                .filter(rewrite -> excludeRedirectCheckService.shouldExclude(rewrite.name()))
+                .map(RewriteDto::id)
+                .toList();
+        NextDnsRateLimitedApiProcessor.callApi(excludedIds, nextDnsRewriteClient::deleteRewriteById);
+        desired.keySet().removeIf(excludeRedirectCheckService::shouldExclude);
+
+        List<CreateRewriteDto> additions = new ArrayList<>();
+        for (CreateRewriteDto request : desired.values()) {
+            RewriteDto current = existingByDomain.get(request.name());
+            if (current == null) {
+                additions.add(request);
+            } else if (!current.content().equals(request.content())) {
+                replaceWithRollback(current, request);
+            }
+        }
+        NextDnsRateLimitedApiProcessor.callApi(additions, nextDnsRewriteClient::saveRewrite);
     }
 
-    public List<CreateRewriteDto> cleanupOutdatedAndExcluded(Map<String, CreateRewriteDto> newRewriteRequests) {
-        List<RewriteDto> existingRewrites = getExistingRewrites();
+    public Map<String, CreateRewriteDto> buildDesired(List<BypassRoute> overrides) {
+        Map<String, CreateRewriteDto> desired = new LinkedHashMap<>();
+        overrides.forEach(route -> desired.putIfAbsent(
+                route.website(), new CreateRewriteDto(route.website(), route.ip())
+        ));
+        return desired;
+    }
 
-        List<String> outdatedIds = new ArrayList<>();
-        List<String> ignoredIds = new ArrayList<>();
-
-        for (RewriteDto existingRewrite : existingRewrites) {
-            String domain = existingRewrite.name();
-            String oldIp = existingRewrite.content();
-            if (excludeRedirectCheckService.shouldExclude(domain)) {
-                ignoredIds.add(existingRewrite.id());
-                newRewriteRequests.remove(domain);
-                continue;
+    private void replaceWithRollback(RewriteDto current, CreateRewriteDto replacement) {
+        Log.io("Replacing changed NextDNS rewrite: " + current.name());
+        NextDnsRateLimitedApiProcessor.callApi(List.of(current.id()), nextDnsRewriteClient::deleteRewriteById);
+        try {
+            NextDnsRateLimitedApiProcessor.callApi(List.of(replacement), nextDnsRewriteClient::saveRewrite);
+        } catch (RuntimeException replacementFailure) {
+            try {
+                CreateRewriteDto rollback = new CreateRewriteDto(current.name(), current.content());
+                NextDnsRateLimitedApiProcessor.callApi(List.of(rollback), nextDnsRewriteClient::saveRewrite);
+            } catch (RuntimeException rollbackFailure) {
+                replacementFailure.addSuppressed(rollbackFailure);
             }
-            CreateRewriteDto request = newRewriteRequests.get(domain);
-            if (nonNull(request) && !request.content().equals(oldIp)) {
-                outdatedIds.add(existingRewrite.id());
-            } else {
-                newRewriteRequests.remove(domain);
-            }
+            throw replacementFailure;
         }
-        newRewriteRequests.keySet().removeIf(excludeRedirectCheckService::shouldExclude);
-
-        if (!outdatedIds.isEmpty()) {
-            Log.io("Removing %s outdated rewrites from NextDNS".formatted(outdatedIds.size()));
-            NextDnsRateLimitedApiProcessor.callApi(outdatedIds, nextDnsRewriteClient::deleteRewriteById);
-        }
-        if (!ignoredIds.isEmpty()) {
-            Log.io("Removing %s excluded rewrites from NextDNS".formatted(ignoredIds.size()));
-            NextDnsRateLimitedApiProcessor.callApi(ignoredIds, nextDnsRewriteClient::deleteRewriteById);
-        }
-        return List.copyOf(newRewriteRequests.values());
     }
 
     public List<RewriteDto> getExistingRewrites() {
@@ -69,17 +78,9 @@ public class NextDnsRewriteService {
         return nextDnsRewriteClient.fetchRewrites();
     }
 
-    public void saveRewrites(List<CreateRewriteDto> createRewriteDtos) {
-        Log.io("Saving %s new rewrites to NextDNS...".formatted(createRewriteDtos.size()));
-        NextDnsRateLimitedApiProcessor.callApi(createRewriteDtos, nextDnsRewriteClient::saveRewrite);
-    }
-
     public void removeAll() {
-        Log.io("Fetching existing rewrites from NextDNS");
-        List<RewriteDto> list = nextDnsRewriteClient.fetchRewrites();
-        List<String> ids = list.stream().map(RewriteDto::id).toList();
+        List<String> ids = getExistingRewrites().stream().map(RewriteDto::id).toList();
         Log.io("Removing rewrites from NextDNS");
         NextDnsRateLimitedApiProcessor.callApi(ids, nextDnsRewriteClient::deleteRewriteById);
     }
-
 }

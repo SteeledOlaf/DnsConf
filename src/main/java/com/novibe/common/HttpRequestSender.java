@@ -12,6 +12,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.concurrent.Semaphore;
 
 import static java.util.Objects.isNull;
@@ -29,6 +30,7 @@ public abstract class HttpRequestSender {
     protected static final String GET = "GET";
     protected static final String POST = "POST";
     protected static final String DELETE = "DELETE";
+    protected static final String PUT = "PUT";
 
     /**
      * Максимальное количество повторных попыток после HTTP 429.
@@ -77,6 +79,10 @@ public abstract class HttpRequestSender {
         return sendRequest(DELETE, path, null, responseType);
     }
 
+    public <T, R extends Jsonable> T put(String path, R requestBody, Class<T> responseType) {
+        return sendRequest(PUT, path, requestBody, responseType);
+    }
+
     protected <T, R extends Jsonable> T sendRequest(
             String method,
             String path,
@@ -110,6 +116,7 @@ public abstract class HttpRequestSender {
 
                     HttpRequest request =
                             HttpRequest.newBuilder(uri)
+                                    .timeout(Duration.ofSeconds(30))
                                     .header(
                                             authHeaderName(),
                                             authHeaderValue()

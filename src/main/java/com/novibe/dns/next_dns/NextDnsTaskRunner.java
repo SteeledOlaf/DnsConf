@@ -6,84 +6,88 @@ import com.novibe.common.exception.UserInputException;
 import com.novibe.common.util.DonorDnsUtils;
 import com.novibe.common.util.EnvParser;
 import com.novibe.common.util.Log;
-import com.novibe.dns.next_dns.http.dto.request.CreateRewriteDto;
 import com.novibe.dns.next_dns.service.NextDnsDenyService;
 import com.novibe.dns.next_dns.service.NextDnsRewriteService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Map;
-
-import static com.novibe.common.config.EnvironmentVariables.BLOCK;
-import static com.novibe.common.config.EnvironmentVariables.ALLOW_CLEAR;
-import static com.novibe.common.config.EnvironmentVariables.REDIRECT;
-import static java.util.Objects.nonNull;
 
 @Service
 @RequiredArgsConstructor
-public class NextDnsTaskRunner extends DnsTaskRunner {
+public class NextDnsTaskRunner extends DnsTaskRunner<NextDnsPlan> {
 
     private final NextDnsRewriteService nextDnsRewriteService;
     private final NextDnsDenyService nextDnsDenyService;
 
     @Override
-    public void greetingMessage() {
-        Log.global("Setting up Profile " + dnsProfile.number() + " (NextDNS)");
-        Log.common("""
-                Script behaviour: old BLOCK/REDIRECT settings are about to be updated via provided BLOCK/REDIRECT sources.
-                - if no sources provided, then all NextDNS settings will be removed.
-                - each line is mapped to an IP–domain pair; lines that cannot be parsed are skipped.
-                - if provided only one type of sources, related settings will be updated; another type remain untouched.
-                - if EXCLUDE_REDIRECT domains provided, they will affect both existing and new redirect rules.
-                NextDNS api rate limiter reset config: 60 seconds after the last request""");
+    public String providerName() {
+        return "NextDNS";
     }
 
     @Override
-    protected void process() {
-        List<String> blockSources = EnvParser.parse(BLOCK);
-        if (!blockSources.isEmpty()) {
-            Log.step("Obtain block lists from %s sources".formatted(blockSources.size()));
-            List<String> blocks = blockListsLoader.fetchWebsites(blockSources);
-            Log.step("Prepare denylist");
-            List<String> filteredBlocklist = nextDnsDenyService.omitExistingDenys(blocks);
-            Log.common("Prepared %s domains to block".formatted(filteredBlocklist.size()));
-            Log.step("Save denylist");
-            nextDnsDenyService.saveDenyList(filteredBlocklist);
-        } else {
-            Log.fail("No block sources provided");
+    public void greetingMessage() {
+        Log.global("Planning Profile " + dnsProfile.number() + " (NextDNS)");
+        Log.common("Existing entries are preserved unless a replacement or explicit ALLOW_CLEAR operation is planned.");
+    }
+
+    @Override
+    protected NextDnsPlan plan() {
+        List<String> blockSources = EnvParser.parse(settings.block());
+        List<String> redirectSources = EnvParser.parse(settings.redirect());
+        boolean clearAll = blockSources.isEmpty() && redirectSources.isEmpty();
+
+        if (clearAll && !settings.allowClear()) {
+            throw UserInputException.noStackTrace(
+                    "BLOCK and REDIRECT are both empty. Set ALLOW_CLEAR=true to explicitly remove all NextDNS settings."
+            );
         }
 
-        List<String> rewriteSources = EnvParser.parse(REDIRECT);
-        if (!rewriteSources.isEmpty()) {
+        List<String> blocks = blockListsLoader.fetchWebsites(blockSources);
+        List<BypassRoute> redirects = overrideListsLoader.fetchWebsites(redirectSources);
 
-            Log.step("Obtain rewrite lists from %s sources".formatted(rewriteSources.size()));
-            List<BypassRoute> overrides = overrideListsLoader.fetchWebsites(rewriteSources);
-
-            if (nonNull(dnsProfile.donorDns())) {
-                Log.step("Replace domain IPs via the configured donor DNS");
-                DonorDnsUtils.replaceIPs(overrides, dnsProfile);
-            }
-
-            Log.step("Prepare rewrites");
-            Map<String, CreateRewriteDto> requests = nextDnsRewriteService.buildNewRewrites(overrides);
-            List<CreateRewriteDto> createRewriteDtos = nextDnsRewriteService.cleanupOutdatedAndExcluded(requests);
-
-            Log.step("Save rewrites");
-            nextDnsRewriteService.saveRewrites(createRewriteDtos);
-        } else {
-            Log.fail("No rewrite sources provided");
+        if (!blockSources.isEmpty() && blocks.isEmpty()) {
+            throw UserInputException.noStackTrace("BLOCK sources returned no valid domains; no NextDNS changes were applied.");
+        }
+        if (!redirectSources.isEmpty() && redirects.isEmpty()) {
+            throw UserInputException.noStackTrace("REDIRECT sources returned no valid routes; no NextDNS changes were applied.");
         }
 
-        if (blockSources.isEmpty() && rewriteSources.isEmpty()) {
-            if (!ALLOW_CLEAR) {
-                throw UserInputException.noStackTrace(
-                        "BLOCK and REDIRECT are both empty. Set ALLOW_CLEAR=true to explicitly remove all NextDNS settings."
-                );
-            }
-            Log.step("Remove settings");
+        if (dnsProfile.donorDns() != null && !redirects.isEmpty()) {
+            Log.step("Replace domain IPs via the configured donor DNS");
+            DonorDnsUtils.replaceIPs(redirects, dnsProfile);
+        }
+
+        return new NextDnsPlan(
+                blocks,
+                redirects,
+                !blockSources.isEmpty(),
+                !redirectSources.isEmpty(),
+                clearAll
+        );
+    }
+
+    @Override
+    protected void apply(NextDnsPlan plan) {
+        if (plan.clearsConfiguration()) {
+            Log.step("Explicitly removing all NextDNS deny and rewrite settings");
             nextDnsDenyService.removeAll();
             nextDnsRewriteService.removeAll();
+            return;
+        }
+
+        if (plan.blockSourceConfigured()) {
+            Log.step("Prepare and save NextDNS denylist");
+            List<String> newDomains = nextDnsDenyService.omitExistingDenys(plan.blocks());
+            nextDnsDenyService.saveDenyList(newDomains);
+            Log.common("NextDNS deny summary: %s new entries, %s already present"
+                    .formatted(newDomains.size(), plan.blocks().size() - newDomains.size()));
+        }
+
+        if (plan.redirectSourceConfigured()) {
+            Log.step("Reconcile NextDNS rewrites");
+            nextDnsRewriteService.reconcile(plan.redirects());
+            Log.common("NextDNS rewrite reconciliation completed for " + plan.redirects().size() + " desired entries");
         }
     }
 

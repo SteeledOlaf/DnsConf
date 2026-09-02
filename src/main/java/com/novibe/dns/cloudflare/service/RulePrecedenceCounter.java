@@ -19,7 +19,7 @@ public class RulePrecedenceCounter {
     private int number = 1;
 
     @Synchronized
-    int next() {
+    public int next() {
         while (skipSet.contains(number)) {
             number++;
         }

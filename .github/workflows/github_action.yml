@@ -13,6 +13,11 @@ on:
         required: true
         default: false
         type: boolean
+      dry_run:
+        description: Build a reconciliation plan without changing DNS providers
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -39,13 +44,13 @@ jobs:
           persist-credentials: false
 
       # ---------------------------------------------------------
-      # 2. Устанавливаем Java 26
+      # 2. Устанавливаем Java 25 LTS
       # ---------------------------------------------------------
-      - name: Set up JDK 26
+      - name: Set up JDK 25
         uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: temurin
-          java-version: '26'
+          java-version: '25'
           cache: maven
 
       # ---------------------------------------------------------
@@ -61,7 +66,7 @@ jobs:
       # ---------------------------------------------------------
       - name: Build with Maven
         run: |
-          mvn -B clean package
+          mvn -B clean verify
 
       # ---------------------------------------------------------
       # 5. Проверяем, что JAR действительно создан
@@ -80,7 +85,7 @@ jobs:
       # 6. Запускаем DnsConf
       # ---------------------------------------------------------
       - name: Run DnsConf
-        if: github.event_name == 'schedule' || inputs.apply_dns == true
+        if: github.event_name == 'schedule' || inputs.apply_dns == true || inputs.dry_run == true
         env:
           DNS: ${{ vars.DNS }}
           BLOCK: ${{ vars.BLOCK }}
@@ -88,6 +93,8 @@ jobs:
           EXCLUDE_REDIRECT: ${{ vars.EXCLUDE_REDIRECT }}
           DONOR_DNS: ${{ vars.DONOR_DNS }}
           ALLOW_CLEAR: ${{ vars.ALLOW_CLEAR }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || vars.DRY_RUN }}
+          DNSCONF_OWNER_ID: ${{ vars.DNSCONF_OWNER_ID }}
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
           AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
           TZ: Europe/Moscow
@@ -110,6 +117,7 @@ jobs:
           echo "EXCLUDE_REDIRECT configured: $([ -n "${EXCLUDE_REDIRECT:-}" ] && echo yes || echo no)"
           echo "DONOR_DNS configured: $([ -n "${DONOR_DNS:-}" ] && echo yes || echo no)"
           echo "ALLOW_CLEAR=${ALLOW_CLEAR:-false}"
+          echo "DRY_RUN=${DRY_RUN:-false}"
           echo "CLIENT_ID=<hidden>"
           echo "AUTH_SECRET=<hidden>"
           echo "------------------------------------------"
@@ -127,4 +135,4 @@ jobs:
           echo "Using JAR: $JAR"
           echo "------------------------------------------"
 
-          java --enable-preview -jar "$JAR"
+          java -jar "$JAR"

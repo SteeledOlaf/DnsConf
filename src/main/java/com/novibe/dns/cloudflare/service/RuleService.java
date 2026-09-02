@@ -9,10 +9,10 @@ import com.novibe.dns.cloudflare.http.dto.response.rule.SingleRuleApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.stream.Collectors;
 
 @Service
@@ -22,96 +22,111 @@ public class RuleService {
     private static final String RULES_LIST_NAME_PREFIX = "Rules set by script";
 
     private final CloudflareRuleClient cloudflareRuleClient;
-    private final String sessionId;
+    private final OwnershipMarker ownershipMarker;
 
-    public void createNewBlockingRule(List<GatewayListDto> lists, RulePrecedenceCounter rulePrecedenceCounter) {
-        String traffic = makeTrafficExpression(lists);
-        CreateRuleRequest rule = CreateRuleRequest.builder()
-                .name(RULES_LIST_NAME_PREFIX + ": block")
-                .precedence(rulePrecedenceCounter.next())
+    public CreatedRule createBlockingRule(List<GatewayListDto> lists, int precedence) {
+        CreateRuleRequest request = CreateRuleRequest.builder()
+                .name(RULES_LIST_NAME_PREFIX + " " + ownershipMarker.generation() + ": block")
+                .precedence(precedence)
                 .action("block")
-                .description(sessionId)
+                .description(ownershipMarker.description())
                 .filters(List.of("dns"))
-                .enabled(true)
-                .traffic(traffic)
+                .enabled(false)
+                .traffic(makeTrafficExpression(lists))
                 .build();
-        Log.io("Posting new blocking rule");
-        SingleRuleApiResponse result = cloudflareRuleClient.createBlockingRule(rule);
-        if (!result.isSuccess()) {
-            throw new IllegalStateException("Failed to set blocking rule: " + result.getErrors());
-        }
+        return createRule(request);
     }
 
-    @SuppressWarnings("preview")
-    public void createNewOverrideRules(Map<String, List<GatewayListDto>> lists, RulePrecedenceCounter rulePrecedenceCounter) {
-        try  (var scope = StructuredTaskScope.open()) {
-            List<StructuredTaskScope.Subtask<Void>> tasks = lists.entrySet().stream()
-                    .map(entry -> scope.fork(() -> {
-                        createNewOverrideRule(entry.getValue(), entry.getKey(), rulePrecedenceCounter.next());
-                        return (Void) null;
-                    }))
-                    .toList();
-            scope.join();
-            tasks.forEach(StructuredTaskScope.Subtask::get);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException(e);
-        }
-    }
-
-    private void createNewOverrideRule(List<GatewayListDto> lists, String overrideIp, int precedence) {
-        String traffic = makeTrafficExpression(lists);
-        CreateRuleRequest rule = CreateRuleRequest.builder()
-                .name(RULES_LIST_NAME_PREFIX + " override to IP -> " + overrideIp)
+    public CreatedRule createOverrideRule(List<GatewayListDto> lists, String overrideIp, int precedence) {
+        CreateRuleRequest request = CreateRuleRequest.builder()
+                .name(RULES_LIST_NAME_PREFIX + " " + ownershipMarker.generation() + " override to IP -> " + overrideIp)
                 .precedence(precedence)
                 .action("override")
-                .description(sessionId)
+                .description(ownershipMarker.description())
                 .filters(List.of("dns"))
-                .enabled(true)
-                .traffic(traffic)
+                .enabled(false)
+                .traffic(makeTrafficExpression(lists))
                 .ruleSettings(new CreateRuleRequest.RuleSettings(List.of(overrideIp)))
                 .build();
-        Log.io("Posting new override rule for IP: " + overrideIp);
-        SingleRuleApiResponse result = cloudflareRuleClient.createBlockingRule(rule);
-        if (!result.isSuccess()) {
-            throw new IllegalStateException("Failed to set override rule: " + result.getErrors());
+        return createRule(request);
+    }
+
+    public void activateRules(List<CreatedRule> rules) {
+        for (CreatedRule rule : rules) {
+            CreateRuleRequest enabled = copyWithEnabled(rule.request(), true);
+            SingleRuleApiResponse response = cloudflareRuleClient.updateRule(rule.rule().getId(), enabled);
+            requireSuccess(response, "activate rule " + rule.rule().getId());
         }
     }
 
     public List<GatewayRuleDto> obtainExistingRules() {
-        return cloudflareRuleClient.getRules().getResult();
+        return cloudflareRuleClient.getRules();
     }
 
-    public List<GatewayRuleDto> removeOldRules(List<GatewayRuleDto> rules) {
-        List<GatewayRuleDto> removeList = rules.stream()
-                .filter(rule -> rule.getName().startsWith(RULES_LIST_NAME_PREFIX))
-                .filter(rule -> !sessionId.equals(rule.getDescription()))
+    public List<GatewayRuleDto> managedRules(Collection<GatewayRuleDto> rules) {
+        return rules.stream()
+                .filter(rule -> rule.getName() != null && rule.getName().startsWith(RULES_LIST_NAME_PREFIX))
+                .filter(rule -> ownershipMarker.owns(rule.getDescription())
+                        || ownershipMarker.isLegacySession(rule.getDescription()))
                 .toList();
-        Log.io("Removing " + removeList.size() + " old rules...");
-        int counter = 0;
-        for (GatewayRuleDto rule : removeList) {
-            String id = rule.getId();
-            SingleRuleApiResponse result = cloudflareRuleClient.removeRuleById(id);
-            if (!result.isSuccess()) {
-                Log.fail("Failed to remove old rule with id %s: %s".formatted(id, result.getErrors()));
-            } else {
-                rules.remove(rule);
-                Log.progress(++counter + "/" + removeList.size() + " removed");
+    }
+
+    public void removeRules(Collection<GatewayRuleDto> rules) {
+        List<String> errors = new ArrayList<>();
+        int removed = 0;
+        for (GatewayRuleDto rule : rules) {
+            try {
+                SingleRuleApiResponse response = cloudflareRuleClient.removeRuleById(rule.getId());
+                if (response == null || !response.isSuccess()) {
+                    errors.add(rule.getId() + ": " + (response == null ? "empty response" : response.getErrors()));
+                } else {
+                    Log.progress(++removed + "/" + rules.size() + " removed");
+                }
+            } catch (RuntimeException exception) {
+                errors.add(rule.getId() + ": " + exception.getMessage());
             }
         }
-        Log.common("\n%s of %s old rules have been removed".formatted(counter, removeList.size()));
-        return rules;
+        if (!errors.isEmpty()) {
+            throw new IllegalStateException("Failed to remove Cloudflare Gateway rules: " + errors);
+        }
     }
 
-    private String makeTrafficExpression(List<GatewayListDto> lists) {
-        List<String> listIds = lists.stream()
+    public void removeCreatedRules(Collection<CreatedRule> rules) {
+        removeRules(rules.stream().map(CreatedRule::rule).toList());
+    }
+
+    private CreatedRule createRule(CreateRuleRequest request) {
+        Log.io("Posting new disabled rule: " + request.name());
+        SingleRuleApiResponse response = cloudflareRuleClient.createRule(request);
+        requireSuccess(response, "create rule " + request.name());
+        if (response.getResult() == null) {
+            throw new IllegalStateException("Cloudflare returned no rule after creating " + request.name());
+        }
+        return new CreatedRule(response.getResult(), request);
+    }
+
+    private static void requireSuccess(SingleRuleApiResponse response, String operation) {
+        if (response == null || !response.isSuccess()) {
+            throw new IllegalStateException("Failed to " + operation + ": "
+                    + (response == null ? "empty response" : response.getErrors()));
+        }
+    }
+
+    private static CreateRuleRequest copyWithEnabled(CreateRuleRequest request, boolean enabled) {
+        return new CreateRuleRequest(
+                request.name(), request.description(), request.action(), request.filters(), request.traffic(),
+                request.precedence(), request.ruleSettings(), enabled
+        );
+    }
+
+    private static String makeTrafficExpression(List<GatewayListDto> lists) {
+        return lists.stream()
                 .map(GatewayListDto::getId)
                 .map(UUID::toString)
-                .toList();
-
-        return listIds.stream()
                 .map("any(dns.domains[*] in $%s)"::formatted)
                 .collect(Collectors.joining(" or "));
     }
 
+    public record CreatedRule(GatewayRuleDto rule, CreateRuleRequest request) {
+    }
 }

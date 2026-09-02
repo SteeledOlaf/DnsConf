@@ -3,6 +3,7 @@ package com.novibe;
 
 import com.novibe.common.DnsTaskRunner;
 import com.novibe.common.base_structures.DnsProfile;
+import com.novibe.common.config.AppSettings;
 import com.novibe.common.exception.CredentialsException;
 import com.novibe.common.exception.UserInputException;
 import com.novibe.common.util.EnvParser;
@@ -17,34 +18,46 @@ import static java.util.Objects.nonNull;
 
 public class App {
 
-    static void main() {
-        final List<DnsProfile> dnsProfiles = EnvParser.parseProfiles();
-        final AnnotationConfigApplicationContext commonContext = loadCommonApplicationContext();
+    public static void main(String[] args) {
+        final AppSettings settings = AppSettings.fromEnvironment();
+        final List<DnsProfile> dnsProfiles = EnvParser.parseProfiles(settings);
+        final AnnotationConfigApplicationContext commonContext = loadCommonApplicationContext(settings);
+        int failedProfiles = 0;
 
         for (DnsProfile dnsProfile : dnsProfiles) {
             AnnotationConfigApplicationContext currentContext = null;
             try {
                 currentContext = loadCurrentProfileContext(dnsProfile, commonContext);
 
-                DnsTaskRunner runner = currentContext.getBean(DnsTaskRunner.class);
+                DnsTaskRunner<?> runner = currentContext.getBean(DnsTaskRunner.class);
                 runner.run();
 
             } catch (CredentialsException credentialsException) {
                 Log.fail("CredentialsException on profile " + dnsProfile.number());
                 Log.fail(credentialsException.getMessage());
+                failedProfiles++;
             } catch (Exception exception) {
                 Log.fail("Unexpected exception on profile " + dnsProfile.number());
-                throw exception;
+                Log.fail(exception.getMessage());
+                failedProfiles++;
             } finally {
                 if (nonNull(currentContext)) currentContext.close();
             }
         }
         commonContext.close();
+        if (failedProfiles > 0) {
+            throw new IllegalStateException("Failed to configure %s of %s DNS profiles"
+                    .formatted(failedProfiles, dnsProfiles.size()));
+        }
     }
 
-    private static AnnotationConfigApplicationContext loadCommonApplicationContext() {
+    private static AnnotationConfigApplicationContext loadCommonApplicationContext(AppSettings settings) {
         String commonsBasePackage = "com.novibe.common";
-        return new AnnotationConfigApplicationContext(commonsBasePackage);
+        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
+        context.registerBean(AppSettings.class, () -> settings);
+        context.scan(commonsBasePackage);
+        context.refresh();
+        return context;
     }
 
     private static @NonNull AnnotationConfigApplicationContext loadCurrentProfileContext(DnsProfile dnsProfile, ApplicationContext commonContext) {

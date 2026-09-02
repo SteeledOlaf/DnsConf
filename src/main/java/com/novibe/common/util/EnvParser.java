@@ -1,31 +1,33 @@
 package com.novibe.common.util;
 
 import com.novibe.common.base_structures.DnsProfile;
-import com.novibe.common.config.EnvironmentVariables;
+import com.novibe.common.config.AppSettings;
 import com.novibe.common.exception.UserInputException;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Arrays;
 
 import static java.util.Objects.isNull;
 
 public class EnvParser {
 
     public static List<String> parse(String envValue) {
-        ArrayList<String> parsed = new ArrayList<>();
-        if (isNull(envValue)) return parsed;
+        if (isNull(envValue)) return new ArrayList<>();
         envValue = envValue.strip();
-        if (envValue.isEmpty()) return parsed;
-        Collections.addAll(parsed, envValue.strip().split(","));
-        return parsed;
+        if (envValue.isEmpty()) return new ArrayList<>();
+        return Arrays.stream(envValue.split(","))
+                .map(String::strip)
+                .filter(value -> !value.isEmpty())
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
     }
 
-    public static List<DnsProfile> parseProfiles() {
-        List<String> dnsList = parse(EnvironmentVariables.DNS);
-        List<String> clientIdList = parse(EnvironmentVariables.CLIENT_ID);
-        List<String> secretList = parse(EnvironmentVariables.AUTH_SECRET);
-        List<String> donorList = parse(EnvironmentVariables.DONOR_DNS);
+    public static List<DnsProfile> parseProfiles(AppSettings settings) {
+        List<String> dnsList = parse(settings.dns());
+        List<String> clientIdList = parse(settings.clientId());
+        List<String> secretList = parse(settings.authSecret());
+        List<String> donorList = parse(settings.donorDns());
 
         if (clientIdList.size() != secretList.size()) {
             throw UserInputException.noStackTrace("CLIENT_ID values amount and AUTH_SECRET values amount must be equal, but were %s and %s"

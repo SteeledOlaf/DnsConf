@@ -1,18 +1,22 @@
 package com.novibe.common.data_sources;
 
-import com.novibe.common.config.EnvironmentVariables;
+import com.novibe.common.config.AppSettings;
 import com.novibe.common.util.DataParser;
 import com.novibe.common.util.EnvParser;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Optional;
 
 @Service
+@RequiredArgsConstructor
 public class ExcludeRedirectSettingsLoader {
 
+    private final AppSettings settings;
+
     public List<String> loadIgnoredDomains() {
-        return Optional.ofNullable(EnvParser.parse(EnvironmentVariables.EXCLUDE_REDIRECT))
+        return Optional.ofNullable(EnvParser.parse(settings.excludeRedirect()))
                 .stream()
                 .flatMap(List::stream)
                 .map(String::trim)
