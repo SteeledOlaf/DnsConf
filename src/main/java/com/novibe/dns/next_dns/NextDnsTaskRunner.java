@@ -2,6 +2,7 @@ package com.novibe.dns.next_dns;
 
 import com.novibe.common.DnsTaskRunner;
 import com.novibe.common.base_structures.BypassRoute;
+import com.novibe.common.exception.UserInputException;
 import com.novibe.common.util.DonorDnsUtils;
 import com.novibe.common.util.EnvParser;
 import com.novibe.common.util.Log;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import static com.novibe.common.config.EnvironmentVariables.BLOCK;
+import static com.novibe.common.config.EnvironmentVariables.ALLOW_CLEAR;
 import static com.novibe.common.config.EnvironmentVariables.REDIRECT;
 import static java.util.Objects.nonNull;
 
@@ -59,7 +61,7 @@ public class NextDnsTaskRunner extends DnsTaskRunner {
             List<BypassRoute> overrides = overrideListsLoader.fetchWebsites(rewriteSources);
 
             if (nonNull(dnsProfile.donorDns())) {
-                Log.step("Replace IP of domains via IPs from " + dnsProfile.donorDns());
+                Log.step("Replace domain IPs via the configured donor DNS");
                 DonorDnsUtils.replaceIPs(overrides, dnsProfile);
             }
 
@@ -74,6 +76,11 @@ public class NextDnsTaskRunner extends DnsTaskRunner {
         }
 
         if (blockSources.isEmpty() && rewriteSources.isEmpty()) {
+            if (!ALLOW_CLEAR) {
+                throw UserInputException.noStackTrace(
+                        "BLOCK and REDIRECT are both empty. Set ALLOW_CLEAR=true to explicitly remove all NextDNS settings."
+                );
+            }
             Log.step("Remove settings");
             nextDnsDenyService.removeAll();
             nextDnsRewriteService.removeAll();

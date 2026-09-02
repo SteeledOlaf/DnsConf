@@ -10,8 +10,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.function.Function;
 
-import static java.util.Optional.ofNullable;
-
 @UtilityClass
 public class NextDnsRateLimitedApiProcessor {
 
@@ -21,7 +19,7 @@ public class NextDnsRateLimitedApiProcessor {
             D requestDto = requestList.get(i);
             try {
                 R response = request.apply(requestDto);
-                if (ofNullable(response).map(r -> r.getErrors()).isPresent()) {
+                if (response != null && response.getErrors() != null && !response.getErrors().isEmpty()) {
                     Log.fail("Failed request: " + response.getErrors());
                 } else {
                     Log.progress("Current success progress: " + (i + 1) + "/" + requestList.size());

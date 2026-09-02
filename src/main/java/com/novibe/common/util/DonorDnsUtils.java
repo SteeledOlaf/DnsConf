@@ -29,7 +29,7 @@ public class DonorDnsUtils {
         dnsResolver.setTimeout(Duration.ofSeconds(5));
         @Cleanup ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
         for (BypassRoute bypassRoute : bypassRoutes) {
-            Log.io("Comparing IP for %s with DNS query to %s".formatted(bypassRoute.website(), dnsProfile.donorDns()));
+            Log.io("Comparing IP for %s via the configured donor DNS".formatted(bypassRoute.website()));
             executor.submit(() -> replaceIp(bypassRoute, dnsResolver));
         }
     }

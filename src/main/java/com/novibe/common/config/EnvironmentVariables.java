@@ -20,6 +20,8 @@ public class EnvironmentVariables {
 
     public static final String DONOR_DNS = System.getenv("DONOR_DNS");
 
+    public static final boolean ALLOW_CLEAR = Boolean.parseBoolean(System.getenv("ALLOW_CLEAR"));
+
     private static String extractMandatoryVariable(String key) {
         String env = System.getenv(key);
         if (isNull(env) || env.isBlank()) {

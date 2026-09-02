@@ -38,20 +38,23 @@ public class RuleService {
         Log.io("Posting new blocking rule");
         SingleRuleApiResponse result = cloudflareRuleClient.createBlockingRule(rule);
         if (!result.isSuccess()) {
-            Log.fail("Failed to set blocking rule: " + result.getErrors());
+            throw new IllegalStateException("Failed to set blocking rule: " + result.getErrors());
         }
     }
 
     @SuppressWarnings("preview")
     public void createNewOverrideRules(Map<String, List<GatewayListDto>> lists, RulePrecedenceCounter rulePrecedenceCounter) {
         try  (var scope = StructuredTaskScope.open()) {
-        for (Map.Entry<String, List<GatewayListDto>> entry : lists.entrySet()) {
-            String overrideIp = entry.getKey();
-            List<GatewayListDto> list = entry.getValue();
-            scope.fork(() -> createNewOverrideRule(list, overrideIp, rulePrecedenceCounter.next()));
-        }
+            List<StructuredTaskScope.Subtask<Void>> tasks = lists.entrySet().stream()
+                    .map(entry -> scope.fork(() -> {
+                        createNewOverrideRule(entry.getValue(), entry.getKey(), rulePrecedenceCounter.next());
+                        return (Void) null;
+                    }))
+                    .toList();
             scope.join();
+            tasks.forEach(StructuredTaskScope.Subtask::get);
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new RuntimeException(e);
         }
     }
@@ -71,7 +74,7 @@ public class RuleService {
         Log.io("Posting new override rule for IP: " + overrideIp);
         SingleRuleApiResponse result = cloudflareRuleClient.createBlockingRule(rule);
         if (!result.isSuccess()) {
-            Log.fail("Failed to set override rule: " + result.getErrors());
+            throw new IllegalStateException("Failed to set override rule: " + result.getErrors());
         }
     }
 

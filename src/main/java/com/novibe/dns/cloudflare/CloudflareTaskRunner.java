@@ -2,6 +2,7 @@ package com.novibe.dns.cloudflare;
 
 import com.novibe.common.DnsTaskRunner;
 import com.novibe.common.base_structures.BypassRoute;
+import com.novibe.common.exception.UserInputException;
 import com.novibe.common.util.DonorDnsUtils;
 import com.novibe.common.util.EnvParser;
 import com.novibe.common.util.Log;
@@ -17,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import static com.novibe.common.config.EnvironmentVariables.BLOCK;
+import static com.novibe.common.config.EnvironmentVariables.ALLOW_CLEAR;
 import static com.novibe.common.config.EnvironmentVariables.REDIRECT;
 import static java.util.Objects.nonNull;
 
@@ -44,8 +46,24 @@ public class CloudflareTaskRunner extends DnsTaskRunner {
     public void process() {
 
 
-        List<String> blocks = blockListsLoader.fetchWebsites(EnvParser.parse(BLOCK));
-        List<BypassRoute> overrides = overrideListsLoader.fetchWebsites(EnvParser.parse(REDIRECT));
+        List<String> blockSources = EnvParser.parse(BLOCK);
+        List<String> redirectSources = EnvParser.parse(REDIRECT);
+
+        if ((blockSources.isEmpty() || redirectSources.isEmpty()) && !ALLOW_CLEAR) {
+            throw UserInputException.noStackTrace(
+                    "Cloudflare replaces both BLOCK and REDIRECT settings. Set ALLOW_CLEAR=true to explicitly clear an omitted setting."
+            );
+        }
+
+        List<String> blocks = blockListsLoader.fetchWebsites(blockSources);
+        List<BypassRoute> overrides = overrideListsLoader.fetchWebsites(redirectSources);
+
+        if (!blockSources.isEmpty() && blocks.isEmpty()) {
+            throw UserInputException.noStackTrace("BLOCK sources returned no valid domains; existing Cloudflare configuration was preserved.");
+        }
+        if (!redirectSources.isEmpty() && overrides.isEmpty()) {
+            throw UserInputException.noStackTrace("REDIRECT sources returned no valid routes; existing Cloudflare configuration was preserved.");
+        }
 
         Log.step("Remove old rules.");
         List<GatewayRuleDto> gatewayRuleDtos = ruleService.obtainExistingRules();
@@ -70,7 +88,7 @@ public class CloudflareTaskRunner extends DnsTaskRunner {
             listService.omitExcludedOverrides(overrides);
 
             if (nonNull(dnsProfile.donorDns())) {
-                Log.step("Replace IP of domains via IPs from " + dnsProfile.donorDns());
+                Log.step("Replace domain IPs via the configured donor DNS");
                 DonorDnsUtils.replaceIPs(overrides, dnsProfile);
             }
 

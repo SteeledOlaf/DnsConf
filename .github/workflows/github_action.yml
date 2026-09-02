@@ -2,43 +2,47 @@ name: DNS Block&Redirect Configurer cron task
 
 on:
   schedule:
-    # 04:30 по Москве (01:30 UTC)
-    - cron: '30 1 * * *'
+    # Каждые 6 часов: 03:17, 09:17, 15:17 и 21:17 по Москве.
+    - cron: '17 */6 * * *'
 
   # Возможность ручного запуска из GitHub Actions
   workflow_dispatch:
+    inputs:
+      apply_dns:
+        description: Apply the resulting configuration to DNS providers
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dnsconf-${{ github.repository }}
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     # GitHub Environment с именем DNS
     environment: DNS
-
-    env:
-      DNS: ${{ vars.DNS }}
-      BLOCK: ${{ vars.BLOCK }}
-      REDIRECT: ${{ vars.REDIRECT }}
-      EXCLUDE_REDIRECT: ${{ vars.EXCLUDE_REDIRECT }}
-      DONOR_DNS: ${{ vars.DONOR_DNS }}
-
-      CLIENT_ID: ${{ secrets.CLIENT_ID }}
-      AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
-
-      TZ: Europe/Moscow
 
     steps:
       # ---------------------------------------------------------
       # 1. Получаем исходники
       # ---------------------------------------------------------
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       # ---------------------------------------------------------
       # 2. Устанавливаем Java 26
       # ---------------------------------------------------------
       - name: Set up JDK 26
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: temurin
           java-version: '26'
@@ -76,8 +80,19 @@ jobs:
       # 6. Запускаем DnsConf
       # ---------------------------------------------------------
       - name: Run DnsConf
+        if: github.event_name == 'schedule' || inputs.apply_dns == true
+        env:
+          DNS: ${{ vars.DNS }}
+          BLOCK: ${{ vars.BLOCK }}
+          REDIRECT: ${{ vars.REDIRECT }}
+          EXCLUDE_REDIRECT: ${{ vars.EXCLUDE_REDIRECT }}
+          DONOR_DNS: ${{ vars.DONOR_DNS }}
+          ALLOW_CLEAR: ${{ vars.ALLOW_CLEAR }}
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          TZ: Europe/Moscow
         run: |
-          set -e
+          set -euo pipefail
 
           echo "=========================================="
           echo "Starting DNS Block&Redirect Configurer"
@@ -88,17 +103,26 @@ jobs:
           java -version
 
           echo "------------------------------------------"
-          echo "Environment variables:"
+          echo "Configuration summary:"
           echo "DNS=${DNS:-<empty>}"
-          echo "BLOCK=${BLOCK:-<empty>}"
-          echo "REDIRECT=${REDIRECT:-<empty>}"
-          echo "EXCLUDE_REDIRECT=${EXCLUDE_REDIRECT:-<empty>}"
-          echo "DONOR_DNS=${DONOR_DNS:-<empty>}"
+          echo "BLOCK configured: $([ -n "${BLOCK:-}" ] && echo yes || echo no)"
+          echo "REDIRECT configured: $([ -n "${REDIRECT:-}" ] && echo yes || echo no)"
+          echo "EXCLUDE_REDIRECT configured: $([ -n "${EXCLUDE_REDIRECT:-}" ] && echo yes || echo no)"
+          echo "DONOR_DNS configured: $([ -n "${DONOR_DNS:-}" ] && echo yes || echo no)"
+          echo "ALLOW_CLEAR=${ALLOW_CLEAR:-false}"
           echo "CLIENT_ID=<hidden>"
           echo "AUTH_SECRET=<hidden>"
           echo "------------------------------------------"
 
-          JAR="$(find target -maxdepth 1 -type f -name '*.jar' | head -n 1)"
+          mapfile -t JARS < <(find target -maxdepth 1 -type f -name '*.jar' ! -name 'original-*' -print)
+
+          if [ "${#JARS[@]}" -ne 1 ]; then
+            echo "ERROR: expected exactly one runnable JAR, found ${#JARS[@]}."
+            printf '%s\n' "${JARS[@]}"
+            exit 1
+          fi
+
+          JAR="${JARS[0]}"
 
           echo "Using JAR: $JAR"
           echo "------------------------------------------"

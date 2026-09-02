@@ -213,9 +213,10 @@ Previously generated data will be removed. Script recognizes old data by marks:
 
 After removing old data, new lists and rules will be generated and applied.
 
-If you want to clear **Cloudflare** block/redirect settings, launch the script without providing sources in related *
-*environment variables**. E.g. providing no value for **environment variable** `BLOCK` will cause removing old related
-data: lists and rules used to set up blocks.
+If you want to clear **Cloudflare** block/redirect settings, set `ALLOW_CLEAR=true` and launch the script without
+providing sources in the related **environment variables**. For example, an empty `BLOCK` value with
+`ALLOW_CLEAR=true` removes the generated blocking data. Without `ALLOW_CLEAR=true`, the script stops before deleting
+the existing configuration.
 
 ### NextDNS
 
@@ -230,7 +231,8 @@ For `BLOCK`:
 + If new domains are provided, they will be added
 + The rest block settings are kept untouched
 
-Previously generated data is removed **ONLY** when both `BLOCK` and `REDIRECT` sources were not provided.
+Previously generated data is removed **ONLY** when both `BLOCK` and `REDIRECT` sources were not provided and
+`ALLOW_CLEAR=true` was explicitly configured.
 
 ---
 
@@ -244,9 +246,10 @@ Previously generated data is removed **ONLY** when both `BLOCK` and `REDIRECT` s
 2) Go _Settings_ => _Environments_
 3) Create _New environment_ with name `DNS`
 4) Provide `AUTH_SECRET` and `CLIENT_ID` to **Environment secrets**
-5) Provide `DNS`,`REDIRECT`, `BLOCK` and `EXCLUDE_REDIRECT` to **Environment variables**
+5) Provide `DNS`,`REDIRECT`, `BLOCK`, `EXCLUDE_REDIRECT`, `DONOR_DNS` and optional `ALLOW_CLEAR` to
+   **Environment variables**. Keep `ALLOW_CLEAR` unset or `false` during normal operation.
 
-+ The action will be executed every day at **01:30 UTC**. To set another time, change cron at
-  `.github/workflows/github_action.yml`
-+ You can run the action manually via `Run workflow` button: switch to _Actions_ tab and choose workflow named **DNS
-  Block&Redirect Configurer cron task**
++ The action is executed every 6 hours at minute 17 (`17 */6 * * *`, UTC). To set another interval, change cron in
+  `.github/workflows/github_action.yml`.
++ You can run the action manually via `Run workflow`: leave `apply_dns` disabled for a build-only validation, or enable
+  it to apply the configuration to the DNS providers.

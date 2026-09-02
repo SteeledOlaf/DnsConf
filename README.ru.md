@@ -250,9 +250,10 @@ https://raw.githubusercontent.com/Internet-Helper/GeoHideDNS/refs/heads/main/hos
 
 После удаления старых данных будут созданы и применены новые списки и правила.
 
-Если нужно очистить настройки блокировки/редиректа **Cloudflare**, запустите скрипт без указания источников в
-соответствующих **переменных окружения**.  
-Например, отсутствие значения в `BLOCK` приведёт к сбросу настроек блокировки.
+Если нужно очистить настройки блокировки/редиректа **Cloudflare**, установите `ALLOW_CLEAR=true` и запустите скрипт
+без указания источников в соответствующих **переменных окружения**. Например, пустое значение `BLOCK` вместе с
+`ALLOW_CLEAR=true` удалит сгенерированные настройки блокировки. Без `ALLOW_CLEAR=true` скрипт остановится до удаления
+существующей конфигурации.
 
 ---
 
@@ -269,7 +270,8 @@ https://raw.githubusercontent.com/Internet-Helper/GeoHideDNS/refs/heads/main/hos
 + Новые домены будут добавлены к существующим
 + Остальные настройки блокировки останутся без изменений
 
-Ранее сгенерированные данные удаляются, если не заданы источники **ДЛЯ ОБЕИХ НАСТРОЕК** `BLOCK` и `REDIRECT`.
+Ранее сгенерированные данные удаляются, только если не заданы источники **ДЛЯ ОБЕИХ НАСТРОЕК** `BLOCK` и `REDIRECT`,
+а также явно установлено `ALLOW_CLEAR=true`.
 
 ---
 
@@ -285,9 +287,10 @@ https://www.youtube.com/watch?v=vbAXM_xAL5I
 2) Перейдите в _Settings_ → _Environments_
 3) Создайте _New environment_ с именем `DNS`
 4) Добавьте `AUTH_SECRET` и `CLIENT_ID` в **Environment secrets**
-5) Добавьте `DNS`, `REDIRECT`, `BLOCK` и `EXCLUDE_REDIRECT` в **Environment variables**
+5) Добавьте `DNS`, `REDIRECT`, `BLOCK`, `EXCLUDE_REDIRECT`, `DONOR_DNS` и необязательный `ALLOW_CLEAR` в
+   **Environment variables**. При обычной работе не задавайте `ALLOW_CLEAR` либо установите его в `false`.
 
-+ **Action** запускается ежедневно в **01:30 UTC** (04:30 по МСК).  
-  Чтобы изменить время, отредактируйте cron в `.github/workflows/github_action.yml`
-+ **Action** можно запустить вручную через кнопку **Run workflow**:  
-  вкладка _Actions_ → workflow **DNS Block&Redirect Configurer cron task**
++ **Action** запускается каждые 6 часов на 17-й минуте (`17 */6 * * *`, UTC): примерно в 03:17, 09:17, 15:17 и
+  21:17 по Москве. Чтобы изменить интервал, отредактируйте cron в `.github/workflows/github_action.yml`.
++ **Action** можно запустить вручную через кнопку **Run workflow**. Оставьте `apply_dns` выключенным для безопасной
+  проверки сборки или включите его, чтобы применить конфигурацию к DNS-провайдерам.
