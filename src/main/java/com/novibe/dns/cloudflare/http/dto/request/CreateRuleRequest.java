@@ -18,10 +18,27 @@ public record CreateRuleRequest(String name,
                                 boolean enabled)
         implements Jsonable {
 
+    public CreateRuleRequest {
+        filters = List.copyOf(filters);
+    }
+
+    @Override
+    public List<String> filters() {
+        return List.copyOf(filters);
+    }
+
     public record RuleSettings(
             @SerializedName("override_ips")
             List<String> overrideIps) {
+
+        public RuleSettings {
+            overrideIps = List.copyOf(overrideIps);
+        }
+
+        @Override
+        public List<String> overrideIps() {
+            return List.copyOf(overrideIps);
+        }
     }
 }
-
 

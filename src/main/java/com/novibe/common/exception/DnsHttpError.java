@@ -28,7 +28,7 @@ public class DnsHttpError extends RuntimeException {
 
     private static String messageBuilder(String requestMethod, String requestUrl, String requestPayload,
                                          int statusCode, String responsePayload) {
-        return "Failed request on %s %s with payload:\n%s\nCode: %s, reason:\n%s".formatted(
+        return "Failed request on %s %s with payload:%n%s%nCode: %s, reason:%n%s".formatted(
                 requestMethod, requestUrl, requestPayload,
                 statusCode, responsePayload);
     }

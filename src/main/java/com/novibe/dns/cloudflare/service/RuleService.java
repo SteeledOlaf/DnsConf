@@ -54,8 +54,8 @@ public class RuleService {
     public void activateRules(List<CreatedRule> rules) {
         for (CreatedRule rule : rules) {
             CreateRuleRequest enabled = copyWithEnabled(rule.request(), true);
-            SingleRuleApiResponse response = cloudflareRuleClient.updateRule(rule.rule().getId(), enabled);
-            requireSuccess(response, "activate rule " + rule.rule().getId());
+            SingleRuleApiResponse response = cloudflareRuleClient.updateRule(rule.ruleId(), enabled);
+            requireSuccess(response, "activate rule " + rule.ruleId());
         }
     }
 
@@ -92,7 +92,18 @@ public class RuleService {
     }
 
     public void removeCreatedRules(Collection<CreatedRule> rules) {
-        removeRules(rules.stream().map(CreatedRule::rule).toList());
+        List<String> errors = new ArrayList<>();
+        for (CreatedRule rule : rules) {
+            try {
+                SingleRuleApiResponse response = cloudflareRuleClient.removeRuleById(rule.ruleId());
+                if (response == null || !response.isSuccess()) {
+                    errors.add(rule.ruleId() + ": " + (response == null ? "empty response" : response.getErrors()));
+                }
+            } catch (RuntimeException exception) {
+                errors.add(rule.ruleId() + ": " + exception.getMessage());
+            }
+        }
+        if (!errors.isEmpty()) throw new IllegalStateException("Failed to roll back Cloudflare rules: " + errors);
     }
 
     private CreatedRule createRule(CreateRuleRequest request) {
@@ -102,7 +113,7 @@ public class RuleService {
         if (response.getResult() == null) {
             throw new IllegalStateException("Cloudflare returned no rule after creating " + request.name());
         }
-        return new CreatedRule(response.getResult(), request);
+        return new CreatedRule(response.getResult().getId(), request);
     }
 
     private static void requireSuccess(SingleRuleApiResponse response, String operation) {
@@ -127,6 +138,6 @@ public class RuleService {
                 .collect(Collectors.joining(" or "));
     }
 
-    public record CreatedRule(GatewayRuleDto rule, CreateRuleRequest request) {
+    public record CreatedRule(String ruleId, CreateRuleRequest request) {
     }
 }
