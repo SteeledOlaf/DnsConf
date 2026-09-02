@@ -255,8 +255,9 @@ Previously generated data is removed **ONLY** when both `BLOCK` and `REDIRECT` s
 
 ### Reliability and security
 
-- Cloudflare uses generation replacement: new lists and disabled rules are created before the previous generation is
-  removed. Failed creation is rolled back. Keep enough list/rule quota for two generations to coexist briefly.
+- Cloudflare uses generation replacement: new block lists and disabled rules are created before the previous generation
+  is removed. Failed creation is rolled back. Redirect domains are embedded directly into Gateway rules instead of
+  consuming one Gateway List per destination IP. Keep enough block-list/rule quota for two generations to coexist briefly.
 - `DNSCONF_OWNER_ID` is a stable ownership namespace. It defaults to `default`; avoid changing it after first use.
 - List sources and DoH donors must be public HTTPS endpoints. Loopback, private, link-local, and multicast targets are
   rejected.

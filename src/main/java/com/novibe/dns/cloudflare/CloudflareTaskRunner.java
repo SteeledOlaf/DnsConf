@@ -96,10 +96,9 @@ public class CloudflareTaskRunner extends DnsTaskRunner<CloudflarePlan> {
             }
 
             if (!plan.redirects().isEmpty()) {
-                Map<String, List<GatewayListDto>> overrideLists = listService.createNewOverrideLists(plan.redirects());
-                overrideLists.values().forEach(newLists::addAll);
-                for (Map.Entry<String, List<GatewayListDto>> entry : overrideLists.entrySet()) {
-                    newRules.add(ruleService.createOverrideRule(entry.getValue(), entry.getKey(), precedence.next()));
+                Map<String, List<String>> redirectsByIp = listPlanner.redirectDomainsByIp(plan.redirects());
+                for (Map.Entry<String, List<String>> entry : redirectsByIp.entrySet()) {
+                    newRules.addAll(ruleService.createOverrideRules(entry.getValue(), entry.getKey(), precedence));
                 }
             }
 

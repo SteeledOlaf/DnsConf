@@ -1,6 +1,5 @@
 package com.novibe.dns.cloudflare.service;
 
-import com.novibe.common.base_structures.BypassRoute;
 import com.novibe.common.util.Log;
 import com.novibe.dns.cloudflare.http.CloudflareListClient;
 import com.novibe.dns.cloudflare.http.dto.request.CreateListRequest;
@@ -11,9 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -26,24 +23,6 @@ public class ListService {
     public List<GatewayListDto> createNewBlockLists(List<String> normalizedDomains) {
         Log.common("Total websites count: " + normalizedDomains.size());
         return saveNewLists(planner.blockRequests(normalizedDomains));
-    }
-
-    public Map<String, List<GatewayListDto>> createNewOverrideLists(List<BypassRoute> normalizedRoutes) {
-        Map<String, List<GatewayListDto>> result = new LinkedHashMap<>();
-        try {
-            for (Map.Entry<String, List<CreateListRequest>> entry : planner.redirectRequests(normalizedRoutes).entrySet()) {
-                Log.io("Posting %s override lists for IP: %s".formatted(entry.getValue().size(), entry.getKey()));
-                result.put(entry.getKey(), saveNewLists(entry.getValue()));
-            }
-            return result;
-        } catch (RuntimeException creationFailure) {
-            try {
-                removeLists(result.values().stream().flatMap(Collection::stream).toList());
-            } catch (RuntimeException rollbackFailure) {
-                creationFailure.addSuppressed(rollbackFailure);
-            }
-            throw creationFailure;
-        }
     }
 
     public List<GatewayListDto> obtainManagedLists() {

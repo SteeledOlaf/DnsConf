@@ -57,16 +57,13 @@ public class CloudflareListPlanner {
         return mapRequests(toChunks(normalizedWebsites), BLOCK_LIST_NAME_PREFIX);
     }
 
-    public Map<String, List<CreateListRequest>> redirectRequests(List<BypassRoute> routes) {
+    public Map<String, List<String>> redirectDomainsByIp(List<BypassRoute> routes) {
         Map<String, List<String>> byIp = new TreeMap<>();
         for (BypassRoute route : routes) {
             byIp.computeIfAbsent(route.ip(), ignored -> new ArrayList<>()).add(route.website());
         }
-        Map<String, List<CreateListRequest>> result = new LinkedHashMap<>();
-        byIp.forEach((ip, domains) -> result.put(
-                ip,
-                mapRequests(toChunks(domains), OVERRIDE_LIST_NAME_PREFIX + " to IP " + ip)
-        ));
+        Map<String, List<String>> result = new LinkedHashMap<>();
+        byIp.forEach((ip, domains) -> result.put(ip, List.copyOf(domains)));
         return result;
     }
 

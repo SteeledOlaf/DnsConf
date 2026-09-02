@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
 public class RuleService {
 
     private static final String RULES_LIST_NAME_PREFIX = "Rules set by script";
+    private static final int MAX_INLINE_TRAFFIC_LENGTH = 120_000;
 
     private final CloudflareRuleClient cloudflareRuleClient;
     private final OwnershipMarker ownershipMarker;
@@ -37,15 +38,28 @@ public class RuleService {
         return createRule(request);
     }
 
-    public CreatedRule createOverrideRule(List<GatewayListDto> lists, String overrideIp, int precedence) {
+    public List<CreatedRule> createOverrideRules(List<String> domains,
+                                                 String overrideIp,
+                                                 RulePrecedenceCounter precedence) {
+        List<String> expressions = makeInlineTrafficExpressions(domains);
+        List<CreatedRule> result = new ArrayList<>();
+        for (int index = 0; index < expressions.size(); index++) {
+            String suffix = expressions.size() == 1 ? "" : " part " + (index + 1) + "/" + expressions.size();
+            result.add(createOverrideRule(expressions.get(index), overrideIp, precedence.next(), suffix));
+        }
+        return List.copyOf(result);
+    }
+
+    private CreatedRule createOverrideRule(String traffic, String overrideIp, int precedence, String nameSuffix) {
         CreateRuleRequest request = CreateRuleRequest.builder()
-                .name(RULES_LIST_NAME_PREFIX + " " + ownershipMarker.generation() + " override to IP -> " + overrideIp)
+                .name(RULES_LIST_NAME_PREFIX + " " + ownershipMarker.generation()
+                        + " override to IP -> " + overrideIp + nameSuffix)
                 .precedence(precedence)
                 .action("override")
                 .description(ownershipMarker.description())
                 .filters(List.of("dns"))
                 .enabled(false)
-                .traffic(makeTrafficExpression(lists))
+                .traffic(traffic)
                 .ruleSettings(new CreateRuleRequest.RuleSettings(List.of(overrideIp)))
                 .build();
         return createRule(request);
@@ -136,6 +150,31 @@ public class RuleService {
                 .map(UUID::toString)
                 .map("any(dns.domains[*] in $%s)"::formatted)
                 .collect(Collectors.joining(" or "));
+    }
+
+    static List<String> makeInlineTrafficExpressions(List<String> domains) {
+        if (domains.isEmpty()) {
+            throw new IllegalArgumentException("An override rule requires at least one domain");
+        }
+
+        List<String> expressions = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        for (String domain : domains) {
+            String clause = "any(dns.domains[*] == \"" + escapeExpressionString(domain) + "\")";
+            int separatorLength = current.isEmpty() ? 0 : 4;
+            if (!current.isEmpty() && current.length() + separatorLength + clause.length() > MAX_INLINE_TRAFFIC_LENGTH) {
+                expressions.add(current.toString());
+                current.setLength(0);
+            }
+            if (!current.isEmpty()) current.append(" or ");
+            current.append(clause);
+        }
+        expressions.add(current.toString());
+        return List.copyOf(expressions);
+    }
+
+    private static String escapeExpressionString(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     public record CreatedRule(String ruleId, CreateRuleRequest request) {

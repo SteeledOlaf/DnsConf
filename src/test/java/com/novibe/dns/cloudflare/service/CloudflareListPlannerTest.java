@@ -8,6 +8,7 @@ import com.novibe.common.service.ExcludeRedirectCheckService;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -43,5 +44,17 @@ class CloudflareListPlannerTest {
         ));
         assertEquals(1, routes.size());
         assertEquals("2.2.2.2", routes.getFirst().ip());
+    }
+
+    @Test
+    void groupsRedirectDomainsByIpWithoutAllocatingGatewayLists() {
+        Map<String, List<String>> grouped = planner().redirectDomainsByIp(List.of(
+                new BypassRoute("2.2.2.2", "two.example"),
+                new BypassRoute("1.1.1.1", "one.example"),
+                new BypassRoute("1.1.1.1", "another.example")
+        ));
+
+        assertEquals(List.of("1.1.1.1", "2.2.2.2"), grouped.keySet().stream().toList());
+        assertEquals(List.of("one.example", "another.example"), grouped.get("1.1.1.1"));
     }
 }
