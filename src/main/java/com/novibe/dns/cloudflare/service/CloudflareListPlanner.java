@@ -83,6 +83,7 @@ public class CloudflareListPlanner {
         if (commentIndex >= 0) domain = domain.substring(0, commentIndex).trim();
         domain = domain.replaceFirst("^https?://", "");
         while (domain.startsWith("*.")) domain = domain.substring(2);
+        if (domain.startsWith("www.")) domain = domain.substring(4);
         int separator = firstPositive(domain.indexOf('/'), domain.indexOf('?'), domain.indexOf('#'), domain.indexOf(':'));
         if (separator >= 0) domain = domain.substring(0, separator);
         while (domain.endsWith(".")) domain = domain.substring(0, domain.length() - 1);
