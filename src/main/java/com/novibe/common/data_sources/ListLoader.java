@@ -41,6 +41,24 @@ public abstract class ListLoader<T> {
     protected abstract Predicate<HostsLine> filterRelatedLines();
 
     public List<T> fetchWebsites(List<String> urls) {
+        return parseWebsites(fetchLines(urls));
+    }
+
+    protected final List<T> parseWebsites(List<String> lines) {
+        return lines.stream()
+                .map(String::strip)
+                .filter(line -> !line.isBlank())
+                .filter(line -> !DataParser.isComment(line))
+                .map(String::toLowerCase)
+                .map(DataParser::parseHostsLine)
+                .filter(Objects::nonNull)
+                .filter(filterRelatedLines())
+                .distinct()
+                .map(this::toObject)
+                .collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    protected final List<String> fetchLines(List<String> urls) {
         if (urls.isEmpty()) return new ArrayList<>();
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Future<List<String>>> requests = urls.stream()
@@ -48,17 +66,7 @@ public abstract class ListLoader<T> {
                     .toList();
             List<String> lines = new ArrayList<>();
             for (Future<List<String>> request : requests) lines.addAll(request.get());
-            return lines.stream()
-                    .map(String::strip)
-                    .filter(line -> !line.isBlank())
-                    .filter(line -> !DataParser.isComment(line))
-                    .map(String::toLowerCase)
-                    .map(DataParser::parseHostsLine)
-                    .filter(Objects::nonNull)
-                    .filter(filterRelatedLines())
-                    .distinct()
-                    .map(this::toObject)
-                    .collect(Collectors.toCollection(ArrayList::new));
+            return List.copyOf(lines);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("List loading was interrupted", exception);

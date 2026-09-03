@@ -259,6 +259,10 @@ Previously generated data is removed **ONLY** when both `BLOCK` and `REDIRECT` s
   is removed. Failed creation is rolled back. Redirect domains are embedded directly into Gateway rules instead of
   consuming one Gateway List per destination IP. Inline redirects are split at Cloudflare's 100-values-per-policy limit.
   Keep enough block-list/rule quota for two generations to coexist briefly.
+- Redirect entries under a `# Google AI` heading are refreshed first by reusing existing managed rule slots. If the
+  500-policy Cloudflare quota cannot hold two full generations, Google AI is still updated and the rest of the previous
+  generation is preserved. These priority entries override `EXCLUDE_REDIRECT` and may reuse lower-priority managed
+  slots when necessary.
 - `DNSCONF_OWNER_ID` is a stable ownership namespace. It defaults to `default`; avoid changing it after first use.
 - List sources and DoH donors must be public HTTPS endpoints. Loopback, private, link-local, and multicast targets are
   rejected.

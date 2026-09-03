@@ -7,11 +7,13 @@ import java.util.List;
 
 public record CloudflarePlan(List<String> blocks,
                              List<BypassRoute> redirects,
+                             List<BypassRoute> priorityRedirects,
                              boolean clearsConfiguration) implements ReconciliationPlan {
 
     public CloudflarePlan {
         blocks = List.copyOf(blocks);
         redirects = List.copyOf(redirects);
+        priorityRedirects = List.copyOf(priorityRedirects);
     }
 
     @Override

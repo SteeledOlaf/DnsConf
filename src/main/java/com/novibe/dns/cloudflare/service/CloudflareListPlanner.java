@@ -41,10 +41,28 @@ public class CloudflareListPlanner {
     }
 
     public List<BypassRoute> normalizeRedirects(List<BypassRoute> routes) {
+        return normalizeRedirects(routes, true);
+    }
+
+    public List<BypassRoute> normalizePriorityRedirects(List<BypassRoute> routes) {
+        return normalizeRedirects(routes, false);
+    }
+
+    public List<BypassRoute> includePriorityRedirects(List<BypassRoute> redirects,
+                                                       List<BypassRoute> priorityRedirects) {
+        Map<String, String> merged = new LinkedHashMap<>();
+        for (BypassRoute route : redirects) merged.putIfAbsent(route.website(), route.ip());
+        for (BypassRoute route : priorityRedirects) merged.put(route.website(), route.ip());
+        return merged.entrySet().stream()
+                .map(entry -> new BypassRoute(entry.getValue(), entry.getKey()))
+                .toList();
+    }
+
+    private List<BypassRoute> normalizeRedirects(List<BypassRoute> routes, boolean applyExclusions) {
         Map<String, String> unique = new LinkedHashMap<>();
         for (BypassRoute route : routes) {
             String normalized = normalizeDomain(route.website());
-            if (normalized != null && !excludeRedirectCheckService.shouldExclude(normalized)) {
+            if (normalized != null && (!applyExclusions || !excludeRedirectCheckService.shouldExclude(normalized))) {
                 unique.putIfAbsent(normalized, route.ip());
             }
         }

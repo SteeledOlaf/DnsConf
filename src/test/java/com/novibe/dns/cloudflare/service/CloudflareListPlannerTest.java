@@ -47,6 +47,22 @@ class CloudflareListPlannerTest {
     }
 
     @Test
+    void priorityRedirectsOverrideExclusions() {
+        CloudflareListPlanner planner = planner();
+        List<BypassRoute> regular = planner.normalizeRedirects(List.of(
+                new BypassRoute("1.1.1.1", "skip.example")
+        ));
+        List<BypassRoute> priority = planner.normalizePriorityRedirects(List.of(
+                new BypassRoute("2.2.2.2", "skip.example")
+        ));
+
+        List<BypassRoute> merged = planner.includePriorityRedirects(regular, priority);
+
+        assertEquals(1, merged.size());
+        assertEquals("2.2.2.2", merged.getFirst().ip());
+    }
+
+    @Test
     void groupsRedirectDomainsByIpWithoutAllocatingGatewayLists() {
         Map<String, List<String>> grouped = planner().redirectDomainsByIp(List.of(
                 new BypassRoute("2.2.2.2", "two.example"),
