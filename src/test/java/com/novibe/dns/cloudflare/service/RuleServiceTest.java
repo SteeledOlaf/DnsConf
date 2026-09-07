@@ -96,6 +96,29 @@ class RuleServiceTest {
     }
 
     @Test
+    void keepsSlotNamesUniqueWhenGoogleAiRuleCountShrinks() {
+        RecordingRuleClient client = new RecordingRuleClient(0);
+        RuleService service = new RuleService(client, ownershipMarker());
+        List<GatewayRuleDto> managed = List.of(
+                overrideRule("slot-1", 10, "gemini.google.com", "192.0.2.1"),
+                overrideRule("slot-2", 11, "generativelanguage.googleapis.com", "192.0.2.2"),
+                overrideRule("slot-3", 12, "gemini.google.com", "192.0.2.3")
+        );
+
+        RuleService.PriorityUpdateResult result = service.refreshPriorityOverrides(
+                java.util.Map.of(
+                        "198.51.100.1", List.of("gemini.google.com"),
+                        "198.51.100.2", List.of("generativelanguage.googleapis.com")
+                ),
+                managed
+        );
+
+        assertEquals(new RuleService.PriorityUpdateResult(2, 3, 0), result);
+        assertEquals(3, client.updates.stream().map(update -> update.request().name()).distinct().count());
+        assertTrue(client.updates.stream().allMatch(update -> update.request().name().endsWith(update.ruleId())));
+    }
+
+    @Test
     void borrowsLowerPriorityManagedSlotWhenGoogleAiNeedsMoreRules() {
         RecordingRuleClient client = new RecordingRuleClient(0);
         RuleService service = new RuleService(client, ownershipMarker());

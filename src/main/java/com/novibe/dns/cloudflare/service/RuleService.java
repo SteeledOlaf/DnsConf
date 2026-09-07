@@ -100,7 +100,10 @@ public class RuleService {
             for (int index = 0; index < slots.size(); index++) {
                 GatewayRuleDto slot = slots.get(index);
                 OverrideRuleTemplate template = desired.get(index % desired.size());
-                CreateRuleRequest replacement = toRequest(template, slot.getPrecedence(), true);
+                CreateRuleRequest replacement = copyWithName(
+                        toRequest(template, slot.getPrecedence(), true),
+                        prioritySlotName(slot)
+                );
                 CreateRuleRequest backup = snapshot(slot);
 
                 Log.io("Refreshing Google AI rule in existing slot: " + slot.getId());
@@ -194,6 +197,20 @@ public class RuleService {
                 request.name(), request.description(), request.action(), request.filters(), request.traffic(),
                 request.precedence(), request.ruleSettings(), enabled
         );
+    }
+
+    private static CreateRuleRequest copyWithName(CreateRuleRequest request, String name) {
+        return new CreateRuleRequest(
+                name, request.description(), request.action(), request.filters(), request.traffic(),
+                request.precedence(), request.ruleSettings(), request.enabled()
+        );
+    }
+
+    private static String prioritySlotName(GatewayRuleDto slot) {
+        if (slot.getId() == null || slot.getId().isBlank()) {
+            throw new IllegalStateException("Cannot refresh a Google AI rule without a Cloudflare rule id");
+        }
+        return RULES_LIST_NAME_PREFIX + " Google AI priority slot " + slot.getId();
     }
 
     private List<OverrideRuleTemplate> makeOverrideRuleTemplates(List<String> domains, String overrideIp) {
