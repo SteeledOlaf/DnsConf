@@ -288,7 +288,7 @@ https://www.youtube.com/watch?v=vbAXM_xAL5I
 3) Создайте _New environment_ с именем `DNS`
 4) Добавьте `AUTH_SECRET` и `CLIENT_ID` в **Environment secrets**
 5) Добавьте `DNS`, `REDIRECT`, `BLOCK`, `EXCLUDE_REDIRECT`, `DONOR_DNS`, а также необязательные `ALLOW_CLEAR`,
-   `DRY_RUN` и `DNSCONF_OWNER_ID` в
+   `DRY_RUN`, `CLOUDFLARE_GOOGLE_AI_ONLY` и `DNSCONF_OWNER_ID` в
    **Environment variables**. При обычной работе не задавайте `ALLOW_CLEAR` либо установите его в `false`.
 
 + **Action** запускается каждые 6 часов на 17-й минуте (`17 */6 * * *`, UTC): примерно в 03:17, 09:17, 15:17 и
@@ -306,6 +306,10 @@ https://www.youtube.com/watch?v=vbAXM_xAL5I
   слотов правил. Если лимит Cloudflare в 500 DNS policies не позволяет держать два полных поколения, Google AI всё
   равно обновляется, а остальная часть предыдущего поколения сохраняется. Эти приоритетные записи имеют преимущество
   перед `EXCLUDE_REDIRECT` и при необходимости могут занять слоты менее важных управляемых правил.
+- `CLOUDFLARE_GOOGLE_AI_ONLY=true` оставляет только редиректы из раздела `# Google AI`. После активации нового
+  поколения программа удаляет остальные правила и списки Cloudflare, которыми управляет DnsConf. Несовпавшие запросы
+  разрешаются стандартным резолвером Cloudflare. Чтобы весь путь от устройства до Cloudflare был зашифрован, устройство
+  должно использовать персональный endpoint `https://<subdomain>.cloudflare-gateway.com/dns-query`.
 - `DNSCONF_OWNER_ID` — стабильный идентификатор владельца создаваемых объектов. Если он не задан, используется
   значение `default`. После первого применения не меняйте его без необходимости.
 - Источники списков и DoH-донор должны использовать публичный HTTPS endpoint. Loopback, private, link-local и

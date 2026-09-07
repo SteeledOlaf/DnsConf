@@ -16,6 +16,7 @@ class AppSettingsTest {
                 "DNS", "CLOUDFLARE",
                 "CLIENT_ID", "account",
                 "AUTH_SECRET", "secret",
+                "CLOUDFLARE_GOOGLE_AI_ONLY", "true",
                 "ALLOW_CLEAR", "true",
                 "DRY_RUN", "true"
         ));
@@ -23,6 +24,7 @@ class AppSettingsTest {
         AppSettings settings = AppSettings.from(env);
 
         assertTrue(settings.allowClear());
+        assertTrue(settings.cloudflareGoogleAiOnly());
         assertTrue(settings.dryRun());
         assertFalse(settings.toString().contains("secret"));
         assertFalse(settings.toString().contains("account"));

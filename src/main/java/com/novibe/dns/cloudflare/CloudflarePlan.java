@@ -8,6 +8,7 @@ import java.util.List;
 public record CloudflarePlan(List<String> blocks,
                              List<BypassRoute> redirects,
                              List<BypassRoute> priorityRedirects,
+                             boolean googleAiOnly,
                              boolean clearsConfiguration) implements ReconciliationPlan {
 
     public CloudflarePlan {

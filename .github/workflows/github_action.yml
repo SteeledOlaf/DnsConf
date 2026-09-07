@@ -96,6 +96,7 @@ jobs:
           REDIRECT: ${{ vars.REDIRECT }}
           EXCLUDE_REDIRECT: ${{ vars.EXCLUDE_REDIRECT }}
           DONOR_DNS: ${{ vars.DONOR_DNS }}
+          CLOUDFLARE_GOOGLE_AI_ONLY: ${{ vars.CLOUDFLARE_GOOGLE_AI_ONLY }}
           ALLOW_CLEAR: ${{ vars.ALLOW_CLEAR }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || vars.DRY_RUN }}
           DNSCONF_OWNER_ID: ${{ vars.DNSCONF_OWNER_ID }}
@@ -120,6 +121,7 @@ jobs:
           echo "REDIRECT configured: $([ -n "${REDIRECT:-}" ] && echo yes || echo no)"
           echo "EXCLUDE_REDIRECT configured: $([ -n "${EXCLUDE_REDIRECT:-}" ] && echo yes || echo no)"
           echo "DONOR_DNS configured: $([ -n "${DONOR_DNS:-}" ] && echo yes || echo no)"
+          echo "CLOUDFLARE_GOOGLE_AI_ONLY=${CLOUDFLARE_GOOGLE_AI_ONLY:-false}"
           echo "ALLOW_CLEAR=${ALLOW_CLEAR:-false}"
           echo "DRY_RUN=${DRY_RUN:-false}"
           echo "CLIENT_ID=<hidden>"

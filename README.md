@@ -246,8 +246,8 @@ Previously generated data is removed **ONLY** when both `BLOCK` and `REDIRECT` s
 2) Go _Settings_ => _Environments_
 3) Create _New environment_ with name `DNS`
 4) Provide `AUTH_SECRET` and `CLIENT_ID` to **Environment secrets**
-5) Provide `DNS`,`REDIRECT`, `BLOCK`, `EXCLUDE_REDIRECT`, `DONOR_DNS`, and optional `ALLOW_CLEAR`, `DRY_RUN`, and
-   `DNSCONF_OWNER_ID` to
+5) Provide `DNS`,`REDIRECT`, `BLOCK`, `EXCLUDE_REDIRECT`, `DONOR_DNS`, and optional `ALLOW_CLEAR`, `DRY_RUN`,
+   `CLOUDFLARE_GOOGLE_AI_ONLY`, and `DNSCONF_OWNER_ID` to
    **Environment variables**. Keep `ALLOW_CLEAR` unset or `false` during normal operation.
 
 - The scheduled workflow runs every six hours. A manual run can use `apply_dns` to apply changes or `dry_run` to
@@ -263,6 +263,10 @@ Previously generated data is removed **ONLY** when both `BLOCK` and `REDIRECT` s
   500-policy Cloudflare quota cannot hold two full generations, Google AI is still updated and the rest of the previous
   generation is preserved. These priority entries override `EXCLUDE_REDIRECT` and may reuse lower-priority managed
   slots when necessary.
+- `CLOUDFLARE_GOOGLE_AI_ONLY=true` keeps only redirects from the `# Google AI` section and removes all other
+  DnsConf-managed Cloudflare rules and lists after the Google AI generation is active. Unmatched requests use
+  Cloudflare's default resolver. Keep devices configured with the location-specific
+  `https://<subdomain>.cloudflare-gateway.com/dns-query` endpoint so the entire device-to-Cloudflare path uses DoH.
 - `DNSCONF_OWNER_ID` is a stable ownership namespace. It defaults to `default`; avoid changing it after first use.
 - List sources and DoH donors must be public HTTPS endpoints. Loopback, private, link-local, and multicast targets are
   rejected.

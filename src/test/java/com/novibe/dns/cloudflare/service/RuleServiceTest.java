@@ -167,7 +167,7 @@ class RuleServiceTest {
     private static OwnershipMarker ownershipMarker() {
         AppSettings settings = new AppSettings(
                 "cloudflare", "account", "secret", null, null, null, null,
-                false, false, "owner"
+                false, false, false, "owner"
         );
         DnsProfile profile = new DnsProfile("CLOUDFLARE", "account", "secret", 1, null);
         return new OwnershipMarker(profile, settings, "11111111-1111-4111-8111-111111111111");

@@ -12,7 +12,7 @@ class ExcludeRedirectCheckServiceTest {
     void matchesExactDomainAndSubdomainsOnly() {
         AppSettings settings = new AppSettings(
                 "cloudflare", "id", "secret", null, null, "example.com", null,
-                false, false, "test"
+                false, false, false, "test"
         );
         ExcludeRedirectCheckService service = new ExcludeRedirectCheckService(
                 new ExcludeRedirectSettingsLoader(settings)

@@ -11,6 +11,7 @@ public record AppSettings(String dns,
                           String redirect,
                           String excludeRedirect,
                           String donorDns,
+                          boolean cloudflareGoogleAiOnly,
                           boolean allowClear,
                           boolean dryRun,
                           String ownerId) {
@@ -28,6 +29,7 @@ public record AppSettings(String dns,
                 environment.get("REDIRECT"),
                 environment.get("EXCLUDE_REDIRECT"),
                 environment.get("DONOR_DNS"),
+                Boolean.parseBoolean(environment.get("CLOUDFLARE_GOOGLE_AI_ONLY")),
                 Boolean.parseBoolean(environment.get("ALLOW_CLEAR")),
                 Boolean.parseBoolean(environment.get("DRY_RUN")),
                 optional(environment.get("DNSCONF_OWNER_ID"), "default")
@@ -48,7 +50,7 @@ public record AppSettings(String dns,
 
     @Override
     public String toString() {
-        return "AppSettings[dns=%s, clientId=<redacted>, authSecret=<redacted>, dryRun=%s]"
-                .formatted(dns, dryRun);
+        return "AppSettings[dns=%s, clientId=<redacted>, authSecret=<redacted>, cloudflareGoogleAiOnly=%s, dryRun=%s]"
+                .formatted(dns, cloudflareGoogleAiOnly, dryRun);
     }
 }

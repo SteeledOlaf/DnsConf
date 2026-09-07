@@ -20,7 +20,7 @@ class EnvParserTest {
     void expandsOneProviderAcrossProfiles() {
         AppSettings settings = new AppSettings(
                 "nextdns", "id1,id2", "secret1,secret2", null, null, null,
-                "-,1.1.1.1", false, false, "test"
+                "-,1.1.1.1", false, false, false, "test"
         );
 
         List<DnsProfile> profiles = EnvParser.parseProfiles(settings);
@@ -34,7 +34,7 @@ class EnvParserTest {
     void rejectsMismatchedCredentialCounts() {
         AppSettings settings = new AppSettings(
                 "nextdns", "id1,id2", "secret1", null, null, null,
-                null, false, false, "test"
+                null, false, false, false, "test"
         );
         assertThrows(UserInputException.class, () -> EnvParser.parseProfiles(settings));
     }

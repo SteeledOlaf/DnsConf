@@ -48,17 +48,26 @@ public class CloudflareTaskRunner extends DnsTaskRunner<CloudflarePlan> {
     protected CloudflarePlan plan() {
         List<String> blockSources = EnvParser.parse(settings.block());
         List<String> redirectSources = EnvParser.parse(settings.redirect());
+        boolean googleAiOnly = settings.cloudflareGoogleAiOnly();
 
-        if ((blockSources.isEmpty() || redirectSources.isEmpty()) && !settings.allowClear()) {
+        if (googleAiOnly && redirectSources.isEmpty()) {
+            throw UserInputException.noStackTrace(
+                    "CLOUDFLARE_GOOGLE_AI_ONLY requires a REDIRECT source containing a # Google AI section."
+            );
+        }
+        if (!googleAiOnly && (blockSources.isEmpty() || redirectSources.isEmpty()) && !settings.allowClear()) {
             throw UserInputException.noStackTrace(
                     "Cloudflare replaces both BLOCK and REDIRECT settings. Set ALLOW_CLEAR=true to explicitly clear an omitted setting."
             );
         }
 
-        List<String> rawBlocks = blockListsLoader.fetchWebsites(blockSources);
+        List<String> rawBlocks = googleAiOnly ? List.of() : blockListsLoader.fetchWebsites(blockSources);
         HostsOverrideListsLoader.PrioritizedOverrides loadedRedirects =
                 overrideListsLoader.fetchWebsitesWithPrioritySection(redirectSources, GOOGLE_AI_SECTION);
-        List<BypassRoute> rawRedirects = new ArrayList<>(loadedRedirects.routes());
+        Set<String> priorityDomains = new HashSet<>(loadedRedirects.priorityDomains());
+        List<BypassRoute> rawRedirects = new ArrayList<>(loadedRedirects.routes().stream()
+                .filter(route -> !googleAiOnly || priorityDomains.contains(route.website()))
+                .toList());
 
         if (dnsProfile.donorDns() != null && !rawRedirects.isEmpty()) {
             Log.step("Replace domain IPs via the configured donor DNS");
@@ -66,17 +75,18 @@ public class CloudflareTaskRunner extends DnsTaskRunner<CloudflarePlan> {
         }
 
         List<String> blocks = listPlanner.normalizeBlocks(rawBlocks);
-        Set<String> priorityDomains = new HashSet<>(loadedRedirects.priorityDomains());
         List<BypassRoute> priorityRedirects = listPlanner.normalizePriorityRedirects(
                 rawRedirects.stream()
                         .filter(route -> priorityDomains.contains(route.website()))
                         .toList()
         );
-        List<BypassRoute> redirects = listPlanner.includePriorityRedirects(
-                listPlanner.normalizeRedirects(rawRedirects), priorityRedirects
-        );
+        List<BypassRoute> redirects = googleAiOnly
+                ? priorityRedirects
+                : listPlanner.includePriorityRedirects(
+                        listPlanner.normalizeRedirects(rawRedirects), priorityRedirects
+                );
 
-        if (!blockSources.isEmpty() && blocks.isEmpty()) {
+        if (!googleAiOnly && !blockSources.isEmpty() && blocks.isEmpty()) {
             throw UserInputException.noStackTrace(
                     "BLOCK sources produced no valid Cloudflare domains after normalization; existing configuration was preserved."
             );
@@ -86,17 +96,25 @@ public class CloudflareTaskRunner extends DnsTaskRunner<CloudflarePlan> {
                     "REDIRECT sources produced no valid Cloudflare routes after normalization; existing configuration was preserved."
             );
         }
-        if (!redirectSources.isEmpty() && priorityRedirects.isEmpty()) {
+        if (googleAiOnly && priorityRedirects.isEmpty()) {
+            throw UserInputException.noStackTrace(
+                    "No valid domains were found under # Google AI; existing Cloudflare configuration was preserved."
+            );
+        } else if (!redirectSources.isEmpty() && priorityRedirects.isEmpty()) {
             Log.fail("No # Google AI section was found in REDIRECT sources; no priority redirects were planned.");
         } else if (!priorityRedirects.isEmpty()) {
             Log.common("Google AI priority layer: %s domains".formatted(priorityRedirects.size()));
+        }
+        if (googleAiOnly) {
+            Log.common("CLOUDFLARE_GOOGLE_AI_ONLY: only Google AI overrides will remain; unmatched DNS uses Cloudflare's default resolver.");
         }
 
         return new CloudflarePlan(
                 blocks,
                 redirects,
                 priorityRedirects,
-                blockSources.isEmpty() || redirectSources.isEmpty()
+                googleAiOnly,
+                googleAiOnly || blockSources.isEmpty() || redirectSources.isEmpty()
         );
     }
 
