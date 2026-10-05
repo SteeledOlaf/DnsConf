@@ -57,7 +57,8 @@ class CloudflareTaskRunnerTest {
 
     private static final class FixedOverrideLoader extends HostsOverrideListsLoader {
         @Override
-        public PrioritizedOverrides fetchWebsitesWithPrioritySection(List<String> urls, String prioritySection) {
+        public PrioritizedOverrides fetchWebsitesWithPrioritySections(List<String> urls, Set<String> prioritySections) {
+            assertEquals(Set.of("Google AI", "Google Gemini AI"), prioritySections);
             return new PrioritizedOverrides(List.of(
                     new BypassRoute("192.0.2.1", "gemini.google.com"),
                     new BypassRoute("192.0.2.2", "example.com")

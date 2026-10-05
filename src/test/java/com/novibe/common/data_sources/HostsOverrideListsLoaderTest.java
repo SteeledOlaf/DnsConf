@@ -23,4 +23,18 @@ class HostsOverrideListsLoaderTest {
 
         assertEquals(Set.of("gemini.google.com", "generativelanguage.googleapis.com"), domains);
     }
+
+    @Test
+    void extractsDomainsFromSupportedGoogleAiSectionAliasesOnly() {
+        Set<String> domains = HostsOverrideListsLoader.domainsInSections(List.of(
+                "# Adobe AI",
+                "192.0.2.1 firefly.example",
+                "# Google Gemini AI",
+                "192.0.2.2 gemini.google.com",
+                "# Grok AI",
+                "192.0.2.3 grok.example"
+        ), Set.of("Google AI", "Google Gemini AI"));
+
+        assertEquals(Set.of("gemini.google.com"), domains);
+    }
 }

@@ -32,21 +32,31 @@ public class HostsOverrideListsLoader extends ListLoader<BypassRoute> {
     }
 
     public PrioritizedOverrides fetchWebsitesWithPrioritySection(List<String> urls, String prioritySection) {
+        return fetchWebsitesWithPrioritySections(urls, Set.of(prioritySection));
+    }
+
+    public PrioritizedOverrides fetchWebsitesWithPrioritySections(List<String> urls, Set<String> prioritySections) {
         List<String> lines = fetchLines(urls);
         List<BypassRoute> routes = parseWebsites(lines);
-        Set<String> priorityDomains = domainsInSection(lines, prioritySection);
+        Set<String> priorityDomains = domainsInSections(lines, prioritySections);
         return new PrioritizedOverrides(routes, priorityDomains);
     }
 
     static Set<String> domainsInSection(List<String> lines, String sectionName) {
-        String expectedHeading = normalizeHeading(sectionName);
+        return domainsInSections(lines, Set.of(sectionName));
+    }
+
+    static Set<String> domainsInSections(List<String> lines, Set<String> sectionNames) {
+        Set<String> expectedHeadings = sectionNames.stream()
+                .map(HostsOverrideListsLoader::normalizeHeading)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
         Set<String> domains = new LinkedHashSet<>();
         boolean insideSection = false;
 
         for (String line : lines) {
             String stripped = line.strip();
             if (DataParser.isComment(stripped)) {
-                insideSection = normalizeHeading(stripped).equals(expectedHeading);
+                insideSection = expectedHeadings.contains(normalizeHeading(stripped));
                 continue;
             }
             if (!insideSection) continue;

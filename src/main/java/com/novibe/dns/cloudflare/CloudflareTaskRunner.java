@@ -27,7 +27,7 @@ import java.util.Set;
 public class CloudflareTaskRunner extends DnsTaskRunner<CloudflarePlan> {
 
     private static final int CLOUDFLARE_DNS_POLICY_LIMIT = 500;
-    private static final String GOOGLE_AI_SECTION = "Google AI";
+    private static final Set<String> GOOGLE_AI_SECTIONS = Set.of("Google AI", "Google Gemini AI");
 
     private final ListService listService;
     private final RuleService ruleService;
@@ -52,7 +52,7 @@ public class CloudflareTaskRunner extends DnsTaskRunner<CloudflarePlan> {
 
         if (googleAiOnly && redirectSources.isEmpty()) {
             throw UserInputException.noStackTrace(
-                    "CLOUDFLARE_GOOGLE_AI_ONLY requires a REDIRECT source containing a # Google AI section."
+                    "CLOUDFLARE_GOOGLE_AI_ONLY requires a REDIRECT source containing a supported Google AI section."
             );
         }
         if (!googleAiOnly && (blockSources.isEmpty() || redirectSources.isEmpty()) && !settings.allowClear()) {
@@ -63,7 +63,7 @@ public class CloudflareTaskRunner extends DnsTaskRunner<CloudflarePlan> {
 
         List<String> rawBlocks = googleAiOnly ? List.of() : blockListsLoader.fetchWebsites(blockSources);
         HostsOverrideListsLoader.PrioritizedOverrides loadedRedirects =
-                overrideListsLoader.fetchWebsitesWithPrioritySection(redirectSources, GOOGLE_AI_SECTION);
+                overrideListsLoader.fetchWebsitesWithPrioritySections(redirectSources, GOOGLE_AI_SECTIONS);
         Set<String> priorityDomains = new HashSet<>(loadedRedirects.priorityDomains());
         List<BypassRoute> rawRedirects = new ArrayList<>(loadedRedirects.routes().stream()
                 .filter(route -> !googleAiOnly || priorityDomains.contains(route.website()))
@@ -98,10 +98,10 @@ public class CloudflareTaskRunner extends DnsTaskRunner<CloudflarePlan> {
         }
         if (googleAiOnly && priorityRedirects.isEmpty()) {
             throw UserInputException.noStackTrace(
-                    "No valid domains were found under # Google AI; existing Cloudflare configuration was preserved."
+                    "No valid domains were found under a supported Google AI section; existing Cloudflare configuration was preserved."
             );
         } else if (!redirectSources.isEmpty() && priorityRedirects.isEmpty()) {
-            Log.fail("No # Google AI section was found in REDIRECT sources; no priority redirects were planned.");
+            Log.fail("No supported Google AI section was found in REDIRECT sources; no priority redirects were planned.");
         } else if (!priorityRedirects.isEmpty()) {
             Log.common("Google AI priority layer: %s domains".formatted(priorityRedirects.size()));
         }
