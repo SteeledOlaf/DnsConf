@@ -16,6 +16,16 @@ class GoogleAiRouteSelectorTest {
     private static final String BACKUP = "159.194.200.33";
 
     @Test
+    void readsLargeGeminiHeadersBeforeClassifyingTheBody() throws Exception {
+        String response = "HTTP/1.1 200 OK\r\nContent-Security-Policy: " + "a".repeat(30_000)
+                + "\r\n\r\n<main>Gemini</main>";
+        byte[] prefix = GoogleAiRouteSelector.readResponsePrefix(new java.io.ByteArrayInputStream(
+                response.getBytes(java.nio.charset.StandardCharsets.ISO_8859_1)));
+        assertEquals(HEALTHY, GoogleAiRouteSelector.classifyResponse(
+                new String(prefix, java.nio.charset.StandardCharsets.ISO_8859_1)));
+    }
+
+    @Test
     void usesReachableBackupInsteadOfDiscardingItDuringDeduplication() {
         GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> status(BACKUP.equals(ip)));
         List<BypassRoute> selected = selector.select(List.of(

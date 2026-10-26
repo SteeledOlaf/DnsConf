@@ -11,6 +11,9 @@ import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import java.io.IOException;
+import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -130,7 +133,7 @@ public class GoogleAiRouteSelector {
                 String request = "GET " + path + " HTTP/1.1\r\nHost: " + host
                         + "\r\nConnection: close\r\nUser-Agent: DnsConf-Health/1.0\r\n\r\n";
                 tls.getOutputStream().write(request.getBytes(StandardCharsets.US_ASCII));
-                byte[] prefix = tls.getInputStream().readNBytes(16_384);
+                byte[] prefix = readResponsePrefix(tls.getInputStream());
                 String response = new String(prefix, StandardCharsets.ISO_8859_1);
                 int lineEnd = response.indexOf("\r\n");
                 String statusLine = lineEnd < 0 ? "malformed response" : response.substring(0, Math.min(lineEnd, 100));
@@ -142,6 +145,25 @@ public class GoogleAiRouteSelector {
                     host, ip, exception.getClass().getSimpleName()));
             return EndpointStatus.UNREACHABLE;
         }
+    }
+
+    static byte[] readResponsePrefix(InputStream input) throws IOException {
+        BufferedInputStream buffered = new BufferedInputStream(input);
+        ByteArrayOutputStream prefix = new ByteArrayOutputStream();
+        int suffix = 0;
+        // Gemini's CSP/cookie headers can exceed 26 KiB. Read complete bounded headers
+        // before collecting a bounded body sample, instead of treating a prefix as a full response.
+        while (prefix.size() < 65_536) {
+            int next = buffered.read();
+            if (next < 0) break;
+            prefix.write(next);
+            suffix = (suffix << 8) | next;
+            if (suffix == 0x0d0a0d0a) {
+                prefix.write(buffered.readNBytes(16_384));
+                break;
+            }
+        }
+        return prefix.toByteArray();
     }
 
     static EndpointStatus classifyResponse(String response) {
