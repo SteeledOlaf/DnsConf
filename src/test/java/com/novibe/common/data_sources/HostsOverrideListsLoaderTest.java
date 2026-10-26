@@ -10,6 +10,24 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class HostsOverrideListsLoaderTest {
 
     @Test
+    void preservesDistinctIpCandidatesForTheSameDomainWhileRemovingExactDuplicates() {
+        var routes = new HostsOverrideListsLoader().parseWebsites(List.of(
+                "193.233.112.68 gemini.google.com",
+                "159.194.200.33 gemini.google.com",
+                "159.194.200.33 gemini.google.com"
+        ));
+        assertEquals(List.of("193.233.112.68", "159.194.200.33"),
+                routes.stream().map(com.novibe.common.base_structures.BypassRoute::ip).toList());
+    }
+
+    @Test
+    void blockLoaderStillDeduplicatesByDomain() {
+        assertEquals(List.of("blocked.example"), new HostsBlockListsLoader().parseWebsites(List.of(
+                "0.0.0.0 blocked.example", "127.0.0.1 blocked.example", "blocked.example"
+        )));
+    }
+
+    @Test
     void extractsOnlyDomainsFromNamedPrioritySection() {
         Set<String> domains = HostsOverrideListsLoader.domainsInSection(List.of(
                 "# Other service",

@@ -53,8 +53,8 @@ public abstract class ListLoader<T> {
                 .map(DataParser::parseHostsLine)
                 .filter(Objects::nonNull)
                 .filter(filterRelatedLines())
-                .distinct()
                 .map(this::toObject)
+                .distinct()
                 .collect(Collectors.toCollection(ArrayList::new));
     }
 
