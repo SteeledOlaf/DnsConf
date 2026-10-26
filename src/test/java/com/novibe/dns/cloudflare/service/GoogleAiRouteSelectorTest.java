@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static com.novibe.dns.cloudflare.service.GoogleAiRouteSelector.EndpointStatus.*;
 
 class GoogleAiRouteSelectorTest {
     private static final String FIRST = "193.233.112.68";
@@ -16,7 +17,7 @@ class GoogleAiRouteSelectorTest {
 
     @Test
     void usesReachableBackupInsteadOfDiscardingItDuringDeduplication() {
-        GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> BACKUP.equals(ip));
+        GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> status(BACKUP.equals(ip)));
         List<BypassRoute> selected = selector.select(List.of(
                 new BypassRoute(FIRST, "gemini.google.com"),
                 new BypassRoute(BACKUP, "gemini.google.com"),
@@ -30,7 +31,7 @@ class GoogleAiRouteSelectorTest {
 
     @Test
     void prefersLocallyVerifiedSourceIpEvenIfRunnerCanReachOtherIps() {
-        GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> true);
+        GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> HEALTHY);
         List<BypassRoute> selected = selector.select(List.of(
                 new BypassRoute(FIRST, "gemini.google.com"),
                 new BypassRoute(BACKUP, "gemini.google.com")
@@ -41,7 +42,7 @@ class GoogleAiRouteSelectorTest {
 
     @Test
     void fallsBackIfPreferredAddressDisappearsFromSource() {
-        GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> FIRST.equals(ip));
+        GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> status(FIRST.equals(ip)));
         List<BypassRoute> selected = selector.select(List.of(
                 new BypassRoute(FIRST, "gemini.google.com"),
                 new BypassRoute(FIRST, "ai.google.dev")
@@ -52,7 +53,7 @@ class GoogleAiRouteSelectorTest {
 
     @Test
     void locallyVerifiedPreferenceSurvivesGeoRestrictedRunnerConnectivity() {
-        GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> false);
+        GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> UNREACHABLE);
         List<BypassRoute> selected = selector.select(List.of(
                 new BypassRoute(FIRST, "gemini.google.com"),
                 new BypassRoute(BACKUP, "gemini.google.com")
@@ -62,7 +63,7 @@ class GoogleAiRouteSelectorTest {
 
     @Test
     void skipsFailedPreferredServerWhenBackupPassesTls() {
-        GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> BACKUP.equals(ip));
+        GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> status(BACKUP.equals(ip)));
         List<BypassRoute> selected = selector.select(List.of(
                 new BypassRoute(FIRST, "gemini.google.com"),
                 new BypassRoute(BACKUP, "gemini.google.com")
@@ -72,7 +73,7 @@ class GoogleAiRouteSelectorTest {
 
     @Test
     void refusesPartialPlanWhenDomainHasNoReachableCandidate() {
-        GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> BACKUP.equals(ip));
+        GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> status(BACKUP.equals(ip)));
         assertThrows(IllegalStateException.class, () -> selector.select(List.of(
                 new BypassRoute(BACKUP, "gemini.google.com"),
                 new BypassRoute(FIRST, "ai.google.dev")
@@ -86,7 +87,7 @@ class GoogleAiRouteSelectorTest {
         GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> {
             checks.incrementAndGet();
             hosts.put(ip, host);
-            return true;
+            return HEALTHY;
         });
         selector.select(List.of(
                 new BypassRoute(BACKUP, "ai.google.dev"),
@@ -102,9 +103,47 @@ class GoogleAiRouteSelectorTest {
     void rejectsPrivateSourceAddressesBeforeProbing() {
         GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> {
             fail("Private source addresses must not be contacted");
-            return true;
+            return HEALTHY;
         });
         assertThrows(IllegalArgumentException.class, () -> selector.select(
                 List.of(new BypassRoute("127.0.0.1", "gemini.google.com")), List.of()));
+    }
+
+    @Test
+    void neverPinsAnEndpointThatReturnedAGoogleChallenge() {
+        GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> REJECTED);
+        assertThrows(IllegalStateException.class, () -> selector.select(
+                List.of(new BypassRoute(FIRST, "gemini.google.com")), List.of(FIRST)));
+    }
+
+    @Test
+    void choosesOneCommonAddressEvenWhenEachDomainHasADifferentFirstCandidate() {
+        GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> HEALTHY);
+        List<BypassRoute> selected = selector.select(List.of(
+                new BypassRoute(FIRST, "gemini.google.com"),
+                new BypassRoute(BACKUP, "gemini.google.com"),
+                new BypassRoute(BACKUP, "generativelanguage.googleapis.com")
+        ), List.of(FIRST));
+        assertTrue(selected.stream().allMatch(route -> BACKUP.equals(route.ip())));
+    }
+
+    @Test
+    void rejectsTlsSuccessfulButBlockedHttpResponses() {
+        assertEquals(REJECTED, GoogleAiRouteSelector.classifyResponse(
+                "HTTP/1.1 302 Found\r\nLocation: https://www.google.com/sorry/index?q=redacted\r\n\r\n"));
+        assertEquals(REJECTED, GoogleAiRouteSelector.classifyResponse(
+                "HTTP/1.1 429 Too Many Requests\r\n\r\n"));
+        assertEquals(REJECTED, GoogleAiRouteSelector.classifyResponse(
+                "HTTP/1.1 200 OK\r\n\r\nOur systems have detected unusual traffic"));
+        assertEquals(REJECTED, GoogleAiRouteSelector.classifyResponse(
+                "HTTP/1.1 503 Service Unavailable\r\n\r\n"));
+        assertEquals(HEALTHY, GoogleAiRouteSelector.classifyResponse(
+                "HTTP/1.1 200 OK\r\n\r\n<title>Gemini</title>"));
+        assertEquals(HEALTHY, GoogleAiRouteSelector.classifyResponse(
+                "HTTP/1.1 302 Found\r\nLocation: https://accounts.google.com/ServiceLogin\r\n\r\n"));
+    }
+
+    private static GoogleAiRouteSelector.EndpointStatus status(boolean healthy) {
+        return healthy ? HEALTHY : UNREACHABLE;
     }
 }

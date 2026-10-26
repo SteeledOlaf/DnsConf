@@ -14,8 +14,24 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class RuleServiceTest {
+
+    @Test
+    void unchangedEnabledOverridesNeedNoCloudflareWrites() {
+        RuleService service = new RuleService(null, ownershipMarker());
+        GatewayRuleDto existing = overrideRule("current", 1, "gemini.google.com", "192.0.2.1");
+        var desired = java.util.Map.of("192.0.2.1", List.of("gemini.google.com"));
+        assertTrue(service.matchesDesiredOverrides(desired, List.of(existing)));
+        existing.setEnabled(false);
+        assertFalse(service.matchesDesiredOverrides(desired, List.of(existing)));
+        existing.setEnabled(true);
+        assertFalse(service.matchesDesiredOverrides(
+                java.util.Map.of("192.0.2.2", List.of("gemini.google.com")), List.of(existing)));
+        assertFalse(service.matchesDesiredOverrides(desired, List.of(existing,
+                overrideRule("stale", 2, "other.example", "192.0.2.1"))));
+    }
 
     @Test
     void buildsInlineDomainExpressionForRedirects() {

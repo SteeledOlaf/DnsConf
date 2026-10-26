@@ -68,6 +68,22 @@ public class RuleService {
                 .sum();
     }
 
+    public boolean matchesDesiredOverrides(Map<String, List<String>> redirectsByIp,
+                                           Collection<GatewayRuleDto> managedRules) {
+        Set<OverrideState> desired = redirectsByIp.entrySet().stream()
+                .flatMap(entry -> makeInlineTrafficExpressions(entry.getValue()).stream()
+                        .map(traffic -> new OverrideState(traffic, List.of(entry.getKey()))))
+                .collect(Collectors.toSet());
+        if (desired.size() != managedRules.size()) return false;
+        Set<OverrideState> actual = new LinkedHashSet<>();
+        for (GatewayRuleDto rule : managedRules) {
+            if (!rule.isEnabled() || !"override".equals(rule.getAction())
+                    || rule.getRuleSettings() == null || rule.getRuleSettings().getOverrideIps() == null) return false;
+            actual.add(new OverrideState(rule.getTraffic(), rule.getRuleSettings().getOverrideIps()));
+        }
+        return desired.equals(actual);
+    }
+
     public PriorityUpdateResult refreshPriorityOverrides(Map<String, List<String>> redirectsByIp,
                                                          Collection<GatewayRuleDto> managedRules) {
         List<OverrideRuleTemplate> desired = redirectsByIp.entrySet().stream()
@@ -300,7 +316,7 @@ public class RuleService {
         List<String> expressions = new ArrayList<>();
         StringBuilder current = new StringBuilder();
         int currentValues = 0;
-        for (String domain : domains) {
+        for (String domain : domains.stream().distinct().sorted().toList()) {
             String clause = "any(dns.domains[*] == \"" + escapeExpressionString(domain) + "\")";
             int separatorLength = current.isEmpty() ? 0 : 4;
             if (!current.isEmpty() && (currentValues >= MAX_INLINE_VALUES
@@ -331,5 +347,11 @@ public class RuleService {
     }
 
     private record OverrideRuleTemplate(String traffic, String overrideIp, String nameSuffix) {
+    }
+
+    private record OverrideState(String traffic, List<String> ips) {
+        private OverrideState {
+            ips = List.copyOf(ips);
+        }
     }
 }

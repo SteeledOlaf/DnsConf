@@ -14,6 +14,8 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -28,12 +30,12 @@ import java.util.concurrent.Future;
 @Service
 public class GoogleAiRouteSelector {
     private static final String GEMINI_HOST = "gemini.google.com";
-    private static final int TIMEOUT_MS = 4_000;
+    private static final int TIMEOUT_MS = 5_000;
     private final EndpointProbe probe;
 
     @Autowired
     public GoogleAiRouteSelector() {
-        this(GoogleAiRouteSelector::verifyTls);
+        this(GoogleAiRouteSelector::verifyApplication);
     }
 
     GoogleAiRouteSelector(EndpointProbe probe) {
@@ -50,44 +52,51 @@ public class GoogleAiRouteSelector {
             // Probe each shared endpoint with Gemini's SNI when that IP advertises Gemini support.
             if (GEMINI_HOST.equals(route.website())) probeHosts.put(route.ip(), GEMINI_HOST);
         }
-        Map<String, Boolean> healthy = checkEndpoints(probeHosts);
-        List<BypassRoute> selected = new ArrayList<>();
-        for (Map.Entry<String, Set<String>> entry : candidates.entrySet()) {
-            List<String> localPreferences = preferredIps.stream().filter(entry.getValue()::contains).toList();
-            String chosen = localPreferences.stream().filter(ip -> Boolean.TRUE.equals(healthy.get(ip)))
-                    .findFirst().orElse(null);
-            if (chosen == null) {
-                chosen = entry.getValue().stream().filter(ip -> Boolean.TRUE.equals(healthy.get(ip)))
-                        .findFirst().orElse(null);
-            }
-            // A total runner outage need not imply a client outage (e.g. region restrictions).
-            if (chosen == null && !localPreferences.isEmpty()) chosen = localPreferences.getFirst();
-            if (chosen == null) {
-                throw new IllegalStateException("No TLS-verified Google AI endpoint for " + entry.getKey()
-                        + "; existing Cloudflare configuration was preserved.");
-            }
-            selected.add(new BypassRoute(chosen, entry.getKey()));
+        if (candidates.isEmpty()) return List.of();
+        Set<String> common = new LinkedHashSet<>(candidates.values().iterator().next());
+        candidates.values().forEach(common::retainAll);
+        if (common.isEmpty()) {
+            throw new IllegalStateException("Google AI domains have no common source IP; refusing a mixed-exit configuration.");
         }
+        Map<String, String> commonProbeHosts = new LinkedHashMap<>();
+        for (String ip : common) commonProbeHosts.put(ip, probeHosts.get(ip));
+        Map<String, EndpointStatus> healthy = checkEndpoints(commonProbeHosts);
+        Set<String> ordered = new LinkedHashSet<>();
+        preferredIps.stream().filter(common::contains).forEach(ordered::add);
+        ordered.addAll(common);
+        String chosen = ordered.stream().filter(ip -> healthy.get(ip) == EndpointStatus.HEALTHY)
+                .findFirst().orElse(null);
+        // An explicit client-verified preference can bridge a runner network outage,
+        // but must never override an actual Google challenge or HTTP rejection.
+        if (chosen == null) {
+            chosen = preferredIps.stream().filter(common::contains)
+                    .filter(ip -> healthy.get(ip) == EndpointStatus.UNREACHABLE).findFirst().orElse(null);
+        }
+        if (chosen == null) {
+            throw new IllegalStateException("No acceptable common Google AI endpoint; existing Cloudflare configuration was preserved.");
+        }
+        List<BypassRoute> selected = new ArrayList<>();
+        for (String domain : candidates.keySet()) selected.add(new BypassRoute(chosen, domain));
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (BypassRoute route : selected) counts.merge(route.ip(), 1, Integer::sum);
         Log.common("Google AI selected endpoints (IP=domains): " + counts);
-        if (selected.stream().anyMatch(route -> !Boolean.TRUE.equals(healthy.get(route.ip())))) {
+        if (healthy.get(chosen) == EndpointStatus.UNREACHABLE) {
             Log.common("Google AI uses explicitly configured locally verified source IPs despite failed runner probes. "
                     + "GitHub Actions and client connectivity differ; recheck these preferences from the client network.");
         }
         return List.copyOf(selected);
     }
 
-    private Map<String, Boolean> checkEndpoints(Map<String, String> hosts) {
-        Map<String, Boolean> result = new LinkedHashMap<>();
+    private Map<String, EndpointStatus> checkEndpoints(Map<String, String> hosts) {
+        Map<String, EndpointStatus> result = new LinkedHashMap<>();
         try (var executor = Executors.newFixedThreadPool(8)) {
-            Map<String, Future<Boolean>> checks = new LinkedHashMap<>();
+            Map<String, Future<EndpointStatus>> checks = new LinkedHashMap<>();
             hosts.forEach((ip, host) -> checks.put(ip, executor.submit(() -> probe.reachable(host, ip))));
-            for (Map.Entry<String, Future<Boolean>> check : checks.entrySet()) {
-                boolean reachable = check.getValue().get();
+            for (Map.Entry<String, Future<EndpointStatus>> check : checks.entrySet()) {
+                EndpointStatus reachable = check.getValue().get();
                 result.put(check.getKey(), reachable);
-                Log.common("Google AI TLS probe: %s (%s): %s".formatted(
-                        check.getKey(), hosts.get(check.getKey()), reachable ? "OK" : "FAILED"));
+                Log.common("Google AI application probe: %s (%s): %s".formatted(
+                        check.getKey(), hosts.get(check.getKey()), reachable));
             }
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
@@ -106,7 +115,7 @@ public class GoogleAiRouteSelector {
         }
     }
 
-    private static boolean verifyTls(String host, String ip) {
+    private static EndpointStatus verifyApplication(String host, String ip) {
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(InetAddress.ofLiteral(ip), 443), TIMEOUT_MS);
             SSLSocketFactory factory = (SSLSocketFactory) SSLSocketFactory.getDefault();
@@ -117,17 +126,51 @@ public class GoogleAiRouteSelector {
                 parameters.setServerNames(List.of(new SNIHostName(host)));
                 tls.setSSLParameters(parameters);
                 tls.startHandshake();
-                return true;
+                String path = GEMINI_HOST.equals(host) ? "/app" : "/";
+                String request = "GET " + path + " HTTP/1.1\r\nHost: " + host
+                        + "\r\nConnection: close\r\nUser-Agent: DnsConf-Health/1.0\r\n\r\n";
+                tls.getOutputStream().write(request.getBytes(StandardCharsets.US_ASCII));
+                byte[] prefix = tls.getInputStream().readNBytes(16_384);
+                return classifyResponse(new String(prefix, StandardCharsets.ISO_8859_1));
             }
         } catch (IOException | IllegalArgumentException exception) {
-            Log.common("Google AI TLS probe failed for %s at %s: %s".formatted(
+            Log.common("Google AI application probe failed for %s at %s: %s".formatted(
                     host, ip, exception.getClass().getSimpleName()));
-            return false;
+            return EndpointStatus.UNREACHABLE;
         }
     }
 
+    static EndpointStatus classifyResponse(String response) {
+        int end = response.indexOf("\r\n\r\n");
+        if (end < 0) return EndpointStatus.REJECTED;
+        String[] headers = response.substring(0, end).split("\r\n");
+        String[] status = headers[0].split(" ", 3);
+        if (status.length < 2 || !status[0].startsWith("HTTP/1.")) return EndpointStatus.REJECTED;
+        String lower = response.toLowerCase(java.util.Locale.ROOT);
+        if (lower.contains("/sorry/") || lower.contains("our systems have detected unusual traffic")
+                || lower.contains("location=unsupported")) return EndpointStatus.REJECTED;
+        if ("200".equals(status[1])) return EndpointStatus.HEALTHY;
+        // Reaching the normal Google sign-in endpoint is valid; do not follow it or send cookies.
+        if ("302".equals(status[1]) || "303".equals(status[1])) {
+            for (String header : headers) {
+                if (!header.toLowerCase(java.util.Locale.ROOT).startsWith("location:")) continue;
+                try {
+                    URI target = URI.create(header.substring(header.indexOf(':') + 1).strip());
+                    if ("https".equals(target.getScheme()) && "accounts.google.com".equals(target.getHost())) {
+                        return EndpointStatus.HEALTHY;
+                    }
+                } catch (IllegalArgumentException ignored) {
+                    return EndpointStatus.REJECTED;
+                }
+            }
+        }
+        return EndpointStatus.REJECTED;
+    }
+
+    enum EndpointStatus { HEALTHY, UNREACHABLE, REJECTED }
+
     @FunctionalInterface
     interface EndpointProbe {
-        boolean reachable(String host, String ip);
+        EndpointStatus reachable(String host, String ip);
     }
 }

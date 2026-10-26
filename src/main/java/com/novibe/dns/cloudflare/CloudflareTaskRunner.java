@@ -129,6 +129,11 @@ public class CloudflareTaskRunner extends DnsTaskRunner<CloudflarePlan> {
         RulePrecedenceCounter precedence = RulePrecedenceCounter.providePrecedenceCounter(allExistingRules);
 
         Map<String, List<String>> redirectsByIp = listPlanner.redirectDomainsByIp(plan.redirects());
+        if (plan.googleAiOnly() && oldLists.isEmpty()
+                && ruleService.matchesDesiredOverrides(redirectsByIp, oldRules)) {
+            Log.common("Google AI configuration is unchanged; no Cloudflare writes were made.");
+            return;
+        }
         int desiredRuleCount = (plan.blocks().isEmpty() ? 0 : 1)
                 + ruleService.requiredOverrideRuleCount(redirectsByIp);
         boolean fullGenerationFits = allExistingRules.size() + desiredRuleCount <= CLOUDFLARE_DNS_POLICY_LIMIT;

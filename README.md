@@ -264,20 +264,27 @@ Previously generated data is removed **ONLY** when both `BLOCK` and `REDIRECT` s
   generation is preserved. These priority entries override `EXCLUDE_REDIRECT` and may reuse lower-priority managed
   slots when necessary.
 - Google AI routes (`# Google AI` or `# Google Gemini AI`) retain all source IP candidates until selection.
-  Before applying, each unique endpoint is checked on port 443 with SNI and certificate/hostname validation;
-  shared endpoints are checked using `gemini.google.com` when the source lists it for that IP. The first verified
-  candidate is selected per domain unless an explicit local preference is configured. If any domain has neither a
-  runner-verified endpoint nor a locally verified preference, planning fails before Cloudflare changes.
-  This is a TLS reachability check, not an authenticated Gemini functionality test.
+  One common source IP is selected for the whole Google AI domain set. If there is no common candidate, the plan
+  fails before changing Cloudflare instead of silently using different exits for related API calls.
+  Each common endpoint is checked using HTTPS with SNI and certificate/hostname validation. For Gemini the probe
+  requests `/app`, rejects HTTP 429, `/sorry/` redirects, explicit unusual-traffic pages and server errors.
+  A successful TLS handshake alone is not a health check. These anonymous probes cannot validate a signed-in session.
 - Optional `CLOUDFLARE_GOOGLE_AI_PREFERRED_IPS` is a comma-separated preference order for addresses tested on your
   connection. Preferences only apply to IPs present for that domain in the current source. Runner-verified preferences
-  are tried first, followed by other runner-verified source candidates. If none pass the runner's TLS checks, an explicit
-  local preference may still be used: some endpoints restrict traffic by network or region. All results are logged.
+  are tried first, followed by other runner-verified common candidates. If none are reachable from the runner, an explicit
+  local preference may still be used for a network timeout; it NEVER overrides a received Google challenge or HTTP error.
+  All results are logged.
   Missing preferred IPs fall back to runner-verified source candidates. A stale preference cannot
   be diagnosed from the runner alone; recheck it locally when connectivity changes. Keep `DONOR_DNS=-` to use
   GeoHideDNS IPs unchanged. DNS clients continue to validate TLS certificates normally.
   GeoHideDNS also publishes an EU source at `https://raw.githubusercontent.com/Internet-Helper/GeoHideDNS/refs/heads/main/hosts/eu/hosts`;
   it can be appended to `REDIRECT` to provide additional IP candidates when the RU servers are unreachable.
+  The corresponding official US source is `https://raw.githubusercontent.com/Internet-Helper/GeoHideDNS/refs/heads/main/hosts/us/hosts`.
+- In Google-AI-only mode, identical enabled rules are retained without rewriting or recreating them on every schedule.
+- `python scripts/probe_google_ai_dns.py https://us.geohide.ru/dns-query --check-gemini` probes the provider's DoH
+  answers and classifies the anonymous `/app` response. It sends no browser cookies and never solves CAPTCHA.
+  GeoHideDNS only proxies its listed hostnames: DNS overrides cannot force its server to proxy Google sign-in,
+  `www.google.com/sorry` or reCAPTCHA hosts that the provider does not support. Persistent challenges require provider support.
 - `CLOUDFLARE_GOOGLE_AI_ONLY=true` keeps only redirects from the supported Google AI sections and removes all other
   DnsConf-managed Cloudflare rules and lists after the Google AI generation is active. Unmatched requests use
   Cloudflare's default resolver. Keep devices configured with the location-specific
