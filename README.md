@@ -270,11 +270,14 @@ Previously generated data is removed **ONLY** when both `BLOCK` and `REDIRECT` s
   runner-verified endpoint nor a locally verified preference, planning fails before Cloudflare changes.
   This is a TLS reachability check, not an authenticated Gemini functionality test.
 - Optional `CLOUDFLARE_GOOGLE_AI_PREFERRED_IPS` is a comma-separated preference order for addresses tested on your
-  connection. Preferences only apply to IPs present for that domain in the current source. They take precedence even
-  when the runner cannot reach the server: some endpoints restrict traffic by network or region. The runner still
-  logs probe results. Missing preferred IPs fall back to runner-verified source candidates. A stale preference cannot
+  connection. Preferences only apply to IPs present for that domain in the current source. Runner-verified preferences
+  are tried first, followed by other runner-verified source candidates. If none pass the runner's TLS checks, an explicit
+  local preference may still be used: some endpoints restrict traffic by network or region. All results are logged.
+  Missing preferred IPs fall back to runner-verified source candidates. A stale preference cannot
   be diagnosed from the runner alone; recheck it locally when connectivity changes. Keep `DONOR_DNS=-` to use
   GeoHideDNS IPs unchanged. DNS clients continue to validate TLS certificates normally.
+  GeoHideDNS also publishes an EU source at `https://raw.githubusercontent.com/Internet-Helper/GeoHideDNS/refs/heads/main/hosts/eu/hosts`;
+  it can be appended to `REDIRECT` to provide additional IP candidates when the RU servers are unreachable.
 - `CLOUDFLARE_GOOGLE_AI_ONLY=true` keeps only redirects from the supported Google AI sections and removes all other
   DnsConf-managed Cloudflare rules and lists after the Google AI generation is active. Unmatched requests use
   Cloudflare's default resolver. Keep devices configured with the location-specific

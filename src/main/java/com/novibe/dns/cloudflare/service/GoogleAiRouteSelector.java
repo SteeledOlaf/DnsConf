@@ -53,12 +53,18 @@ public class GoogleAiRouteSelector {
         Map<String, Boolean> healthy = checkEndpoints(probeHosts);
         List<BypassRoute> selected = new ArrayList<>();
         for (Map.Entry<String, Set<String>> entry : candidates.entrySet()) {
-            String chosen = preferredIps.stream().filter(entry.getValue()::contains).findFirst().orElse(null);
+            List<String> localPreferences = preferredIps.stream().filter(entry.getValue()::contains).toList();
+            String chosen = localPreferences.stream().filter(ip -> Boolean.TRUE.equals(healthy.get(ip)))
+                    .findFirst().orElse(null);
             if (chosen == null) {
                 chosen = entry.getValue().stream().filter(ip -> Boolean.TRUE.equals(healthy.get(ip)))
-                        .findFirst().orElseThrow(() -> new IllegalStateException(
-                                "No TLS-verified Google AI endpoint for " + entry.getKey()
-                                        + "; existing Cloudflare configuration was preserved."));
+                        .findFirst().orElse(null);
+            }
+            // A total runner outage need not imply a client outage (e.g. region restrictions).
+            if (chosen == null && !localPreferences.isEmpty()) chosen = localPreferences.getFirst();
+            if (chosen == null) {
+                throw new IllegalStateException("No TLS-verified Google AI endpoint for " + entry.getKey()
+                        + "; existing Cloudflare configuration was preserved.");
             }
             selected.add(new BypassRoute(chosen, entry.getKey()));
         }

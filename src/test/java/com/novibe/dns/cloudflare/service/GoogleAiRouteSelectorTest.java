@@ -61,6 +61,16 @@ class GoogleAiRouteSelectorTest {
     }
 
     @Test
+    void skipsFailedPreferredServerWhenBackupPassesTls() {
+        GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> BACKUP.equals(ip));
+        List<BypassRoute> selected = selector.select(List.of(
+                new BypassRoute(FIRST, "gemini.google.com"),
+                new BypassRoute(BACKUP, "gemini.google.com")
+        ), List.of(FIRST, BACKUP));
+        assertEquals(BACKUP, selected.getFirst().ip());
+    }
+
+    @Test
     void refusesPartialPlanWhenDomainHasNoReachableCandidate() {
         GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> BACKUP.equals(ip));
         assertThrows(IllegalStateException.class, () -> selector.select(List.of(
