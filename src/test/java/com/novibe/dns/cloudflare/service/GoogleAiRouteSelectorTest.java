@@ -40,15 +40,24 @@ class GoogleAiRouteSelectorTest {
     }
 
     @Test
-    void fallsBackIfPreferredAddressDisappearsFromSourceOrFailsProbe() {
+    void fallsBackIfPreferredAddressDisappearsFromSource() {
         GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> FIRST.equals(ip));
         List<BypassRoute> selected = selector.select(List.of(
                 new BypassRoute(FIRST, "gemini.google.com"),
-                new BypassRoute(BACKUP, "gemini.google.com"),
                 new BypassRoute(FIRST, "ai.google.dev")
         ), List.of(BACKUP));
 
         assertTrue(selected.stream().allMatch(route -> FIRST.equals(route.ip())));
+    }
+
+    @Test
+    void locallyVerifiedPreferenceSurvivesGeoRestrictedRunnerConnectivity() {
+        GoogleAiRouteSelector selector = new GoogleAiRouteSelector((host, ip) -> false);
+        List<BypassRoute> selected = selector.select(List.of(
+                new BypassRoute(FIRST, "gemini.google.com"),
+                new BypassRoute(BACKUP, "gemini.google.com")
+        ), List.of(BACKUP));
+        assertEquals(BACKUP, selected.getFirst().ip());
     }
 
     @Test

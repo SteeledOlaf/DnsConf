@@ -266,12 +266,15 @@ Previously generated data is removed **ONLY** when both `BLOCK` and `REDIRECT` s
 - Google AI routes (`# Google AI` or `# Google Gemini AI`) retain all source IP candidates until selection.
   Before applying, each unique endpoint is checked on port 443 with SNI and certificate/hostname validation;
   shared endpoints are checked using `gemini.google.com` when the source lists it for that IP. The first verified
-  candidate is selected per domain. If any domain has no verified endpoint, planning fails before Cloudflare changes.
+  candidate is selected per domain unless an explicit local preference is configured. If any domain has neither a
+  runner-verified endpoint nor a locally verified preference, planning fails before Cloudflare changes.
   This is a TLS reachability check, not an authenticated Gemini functionality test.
 - Optional `CLOUDFLARE_GOOGLE_AI_PREFERRED_IPS` is a comma-separated preference order for addresses tested on your
-  connection. Preferences only apply to IPs present for that domain in the current source and passing the TLS check.
-  Missing or failed preferred IPs fall back to other source candidates. Checks run from GitHub Actions, so reachability
-  can differ from your ISP; verify locally when choosing preferences. Keep `DONOR_DNS=-` to use GeoHideDNS IPs unchanged.
+  connection. Preferences only apply to IPs present for that domain in the current source. They take precedence even
+  when the runner cannot reach the server: some endpoints restrict traffic by network or region. The runner still
+  logs probe results. Missing preferred IPs fall back to runner-verified source candidates. A stale preference cannot
+  be diagnosed from the runner alone; recheck it locally when connectivity changes. Keep `DONOR_DNS=-` to use
+  GeoHideDNS IPs unchanged. DNS clients continue to validate TLS certificates normally.
 - `CLOUDFLARE_GOOGLE_AI_ONLY=true` keeps only redirects from the supported Google AI sections and removes all other
   DnsConf-managed Cloudflare rules and lists after the Google AI generation is active. Unmatched requests use
   Cloudflare's default resolver. Keep devices configured with the location-specific

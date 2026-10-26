@@ -53,20 +53,22 @@ public class GoogleAiRouteSelector {
         Map<String, Boolean> healthy = checkEndpoints(probeHosts);
         List<BypassRoute> selected = new ArrayList<>();
         for (Map.Entry<String, Set<String>> entry : candidates.entrySet()) {
-            Set<String> ordered = new LinkedHashSet<>();
-            for (String preferred : preferredIps) {
-                if (entry.getValue().contains(preferred)) ordered.add(preferred);
+            String chosen = preferredIps.stream().filter(entry.getValue()::contains).findFirst().orElse(null);
+            if (chosen == null) {
+                chosen = entry.getValue().stream().filter(ip -> Boolean.TRUE.equals(healthy.get(ip)))
+                        .findFirst().orElseThrow(() -> new IllegalStateException(
+                                "No TLS-verified Google AI endpoint for " + entry.getKey()
+                                        + "; existing Cloudflare configuration was preserved."));
             }
-            ordered.addAll(entry.getValue());
-            String chosen = ordered.stream().filter(ip -> Boolean.TRUE.equals(healthy.get(ip)))
-                    .findFirst().orElseThrow(() -> new IllegalStateException(
-                            "No TLS-verified Google AI endpoint for " + entry.getKey()
-                                    + "; existing Cloudflare configuration was preserved."));
             selected.add(new BypassRoute(chosen, entry.getKey()));
         }
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (BypassRoute route : selected) counts.merge(route.ip(), 1, Integer::sum);
         Log.common("Google AI selected endpoints (IP=domains): " + counts);
+        if (selected.stream().anyMatch(route -> !Boolean.TRUE.equals(healthy.get(route.ip())))) {
+            Log.common("Google AI uses explicitly configured locally verified source IPs despite failed runner probes. "
+                    + "GitHub Actions and client connectivity differ; recheck these preferences from the client network.");
+        }
         return List.copyOf(selected);
     }
 
@@ -112,6 +114,8 @@ public class GoogleAiRouteSelector {
                 return true;
             }
         } catch (IOException | IllegalArgumentException exception) {
+            Log.common("Google AI TLS probe failed for %s at %s: %s".formatted(
+                    host, ip, exception.getClass().getSimpleName()));
             return false;
         }
     }
