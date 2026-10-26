@@ -140,6 +140,8 @@ class GoogleAiRouteSelectorTest {
         assertEquals(HEALTHY, GoogleAiRouteSelector.classifyResponse(
                 "HTTP/1.1 200 OK\r\n\r\n<title>Gemini</title>"));
         assertEquals(HEALTHY, GoogleAiRouteSelector.classifyResponse(
+                "HTTP/1.1 200 OK\r\n\r\n<script>const help='/sorry/'; const error='Our systems have detected unusual traffic';</script><main>Gemini</main>"));
+        assertEquals(HEALTHY, GoogleAiRouteSelector.classifyResponse(
                 "HTTP/1.1 302 Found\r\nLocation: https://accounts.google.com/ServiceLogin\r\n\r\n"));
     }
 

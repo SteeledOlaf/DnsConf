@@ -150,9 +150,19 @@ public class GoogleAiRouteSelector {
         String[] headers = response.substring(0, end).split("\r\n");
         String[] status = headers[0].split(" ", 3);
         if (status.length < 2 || !status[0].startsWith("HTTP/1.")) return EndpointStatus.REJECTED;
-        String lower = response.toLowerCase(java.util.Locale.ROOT);
-        if (lower.contains("/sorry/") || lower.contains("our systems have detected unusual traffic")
-                || lower.contains("location=unsupported")) return EndpointStatus.REJECTED;
+        // Normal Gemini HTML may contain /sorry/ URLs in its JavaScript bundle.
+        // Only inspect redirect headers and visible text, not arbitrary script substrings.
+        for (String header : headers) {
+            String lowerHeader = header.toLowerCase(java.util.Locale.ROOT);
+            if (lowerHeader.startsWith("location:") && (lowerHeader.contains("/sorry/")
+                    || lowerHeader.contains("location=unsupported"))) return EndpointStatus.REJECTED;
+        }
+        String visible = response.substring(end + 4)
+                .replaceAll("(?is)<script\\b[^>]*>.*?(?:</script>|\\z)", " ")
+                .replaceAll("(?is)<style\\b[^>]*>.*?(?:</style>|\\z)", " ")
+                .replaceAll("<[^>]*>", " ").replaceAll("\\s+", " ")
+                .toLowerCase(java.util.Locale.ROOT);
+        if (visible.contains("our systems have detected unusual traffic")) return EndpointStatus.REJECTED;
         if ("200".equals(status[1])) return EndpointStatus.HEALTHY;
         // Reaching the normal Google sign-in endpoint is valid; do not follow it or send cookies.
         if ("302".equals(status[1]) || "303".equals(status[1])) {
