@@ -131,7 +131,11 @@ public class GoogleAiRouteSelector {
                         + "\r\nConnection: close\r\nUser-Agent: DnsConf-Health/1.0\r\n\r\n";
                 tls.getOutputStream().write(request.getBytes(StandardCharsets.US_ASCII));
                 byte[] prefix = tls.getInputStream().readNBytes(16_384);
-                return classifyResponse(new String(prefix, StandardCharsets.ISO_8859_1));
+                String response = new String(prefix, StandardCharsets.ISO_8859_1);
+                int lineEnd = response.indexOf("\r\n");
+                String statusLine = lineEnd < 0 ? "malformed response" : response.substring(0, Math.min(lineEnd, 100));
+                Log.common("Google AI HTTP status at " + ip + ": " + statusLine);
+                return classifyResponse(response);
             }
         } catch (IOException | IllegalArgumentException exception) {
             Log.common("Google AI application probe failed for %s at %s: %s".formatted(
