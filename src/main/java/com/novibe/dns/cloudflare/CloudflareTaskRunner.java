@@ -10,6 +10,7 @@ import com.novibe.common.util.Log;
 import com.novibe.dns.cloudflare.http.dto.response.list.GatewayListDto;
 import com.novibe.dns.cloudflare.http.dto.response.rule.GatewayRuleDto;
 import com.novibe.dns.cloudflare.service.CloudflareListPlanner;
+import com.novibe.dns.cloudflare.service.GoogleAiRouteSelector;
 import com.novibe.dns.cloudflare.service.ListService;
 import com.novibe.dns.cloudflare.service.RulePrecedenceCounter;
 import com.novibe.dns.cloudflare.service.RuleService;
@@ -32,6 +33,7 @@ public class CloudflareTaskRunner extends DnsTaskRunner<CloudflarePlan> {
     private final ListService listService;
     private final RuleService ruleService;
     private final CloudflareListPlanner listPlanner;
+    private final GoogleAiRouteSelector googleAiRouteSelector;
 
     @Override
     public String providerName() {
@@ -75,10 +77,11 @@ public class CloudflareTaskRunner extends DnsTaskRunner<CloudflarePlan> {
         }
 
         List<String> blocks = listPlanner.normalizeBlocks(rawBlocks);
+        List<BypassRoute> priorityCandidates = rawRedirects.stream()
+                .filter(route -> priorityDomains.contains(route.website()))
+                .toList();
         List<BypassRoute> priorityRedirects = listPlanner.normalizePriorityRedirects(
-                rawRedirects.stream()
-                        .filter(route -> priorityDomains.contains(route.website()))
-                        .toList()
+                googleAiRouteSelector.select(priorityCandidates, EnvParser.parse(settings.googleAiPreferredIps()))
         );
         List<BypassRoute> redirects = googleAiOnly
                 ? priorityRedirects

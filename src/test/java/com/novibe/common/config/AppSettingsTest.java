@@ -20,12 +20,14 @@ class AppSettingsTest {
                 "ALLOW_CLEAR", "true",
                 "DRY_RUN", "true"
         ));
+        env.put("CLOUDFLARE_GOOGLE_AI_PREFERRED_IPS", "159.194.200.33");
 
         AppSettings settings = AppSettings.from(env);
 
         assertTrue(settings.allowClear());
         assertTrue(settings.cloudflareGoogleAiOnly());
         assertTrue(settings.dryRun());
+        assertEquals("159.194.200.33", settings.googleAiPreferredIps());
         assertFalse(settings.toString().contains("secret"));
         assertFalse(settings.toString().contains("account"));
     }

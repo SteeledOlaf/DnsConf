@@ -8,6 +8,7 @@ import com.novibe.common.data_sources.HostsBlockListsLoader;
 import com.novibe.common.data_sources.HostsOverrideListsLoader;
 import com.novibe.common.service.ExcludeRedirectCheckService;
 import com.novibe.dns.cloudflare.service.CloudflareListPlanner;
+import com.novibe.dns.cloudflare.service.GoogleAiRouteSelector;
 import com.novibe.dns.cloudflare.service.OwnershipMarker;
 import org.junit.jupiter.api.Test;
 
@@ -32,7 +33,15 @@ class CloudflareTaskRunnerTest {
         CloudflareListPlanner planner = new CloudflareListPlanner(
                 new ExcludeRedirectCheckService(new ExcludeRedirectSettingsLoader(settings)), marker
         );
-        CloudflareTaskRunner runner = new CloudflareTaskRunner(null, null, planner);
+        GoogleAiRouteSelector selector = new GoogleAiRouteSelector() {
+            @Override
+            public List<BypassRoute> select(List<BypassRoute> routes, List<String> preferredIps) {
+                assertEquals(List.of("192.0.2.1", "192.0.2.3"), routes.stream().map(BypassRoute::ip).toList());
+                assertTrue(routes.stream().allMatch(route -> route.website().equals("gemini.google.com")));
+                return List.of(routes.getLast());
+            }
+        };
+        CloudflareTaskRunner runner = new CloudflareTaskRunner(null, null, planner, selector);
         runner.setSettings(settings);
         runner.setDnsProfile(profile);
         runner.setBlockListsLoader(new FailingBlockLoader());
@@ -46,6 +55,7 @@ class CloudflareTaskRunnerTest {
         assertEquals(List.of("gemini.google.com"),
                 plan.redirects().stream().map(BypassRoute::website).toList());
         assertEquals(plan.priorityRedirects(), plan.redirects());
+        assertEquals("192.0.2.3", plan.redirects().getFirst().ip());
     }
 
     private static final class FailingBlockLoader extends HostsBlockListsLoader {
@@ -61,6 +71,7 @@ class CloudflareTaskRunnerTest {
             assertEquals(Set.of("Google AI", "Google Gemini AI"), prioritySections);
             return new PrioritizedOverrides(List.of(
                     new BypassRoute("192.0.2.1", "gemini.google.com"),
+                    new BypassRoute("192.0.2.3", "gemini.google.com"),
                     new BypassRoute("192.0.2.2", "example.com")
             ), Set.of("gemini.google.com"));
         }

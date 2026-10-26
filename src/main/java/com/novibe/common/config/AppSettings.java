@@ -14,7 +14,15 @@ public record AppSettings(String dns,
                           boolean cloudflareGoogleAiOnly,
                           boolean allowClear,
                           boolean dryRun,
-                          String ownerId) {
+                          String ownerId,
+                          String googleAiPreferredIps) {
+
+    public AppSettings(String dns, String clientId, String authSecret, String block, String redirect,
+                       String excludeRedirect, String donorDns, boolean cloudflareGoogleAiOnly,
+                       boolean allowClear, boolean dryRun, String ownerId) {
+        this(dns, clientId, authSecret, block, redirect, excludeRedirect, donorDns,
+                cloudflareGoogleAiOnly, allowClear, dryRun, ownerId, "");
+    }
 
     public static AppSettings fromEnvironment() {
         return from(System.getenv());
@@ -32,7 +40,8 @@ public record AppSettings(String dns,
                 Boolean.parseBoolean(environment.get("CLOUDFLARE_GOOGLE_AI_ONLY")),
                 Boolean.parseBoolean(environment.get("ALLOW_CLEAR")),
                 Boolean.parseBoolean(environment.get("DRY_RUN")),
-                optional(environment.get("DNSCONF_OWNER_ID"), "default")
+                optional(environment.get("DNSCONF_OWNER_ID"), "default"),
+                optional(environment.get("CLOUDFLARE_GOOGLE_AI_PREFERRED_IPS"), "")
         );
     }
 

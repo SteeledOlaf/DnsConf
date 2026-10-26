@@ -263,7 +263,16 @@ Previously generated data is removed **ONLY** when both `BLOCK` and `REDIRECT` s
   500-policy Cloudflare quota cannot hold two full generations, Google AI is still updated and the rest of the previous
   generation is preserved. These priority entries override `EXCLUDE_REDIRECT` and may reuse lower-priority managed
   slots when necessary.
-- `CLOUDFLARE_GOOGLE_AI_ONLY=true` keeps only redirects from the `# Google AI` section and removes all other
+- Google AI routes (`# Google AI` or `# Google Gemini AI`) retain all source IP candidates until selection.
+  Before applying, each unique endpoint is checked on port 443 with SNI and certificate/hostname validation;
+  shared endpoints are checked using `gemini.google.com` when the source lists it for that IP. The first verified
+  candidate is selected per domain. If any domain has no verified endpoint, planning fails before Cloudflare changes.
+  This is a TLS reachability check, not an authenticated Gemini functionality test.
+- Optional `CLOUDFLARE_GOOGLE_AI_PREFERRED_IPS` is a comma-separated preference order for addresses tested on your
+  connection. Preferences only apply to IPs present for that domain in the current source and passing the TLS check.
+  Missing or failed preferred IPs fall back to other source candidates. Checks run from GitHub Actions, so reachability
+  can differ from your ISP; verify locally when choosing preferences. Keep `DONOR_DNS=-` to use GeoHideDNS IPs unchanged.
+- `CLOUDFLARE_GOOGLE_AI_ONLY=true` keeps only redirects from the supported Google AI sections and removes all other
   DnsConf-managed Cloudflare rules and lists after the Google AI generation is active. Unmatched requests use
   Cloudflare's default resolver. Keep devices configured with the location-specific
   `https://<subdomain>.cloudflare-gateway.com/dns-query` endpoint so the entire device-to-Cloudflare path uses DoH.
